@@ -59,5 +59,10 @@ app/
 ## Status (2026-07-11)
 M1 skeleton built (board, listing CRUD, tour capture, persistence, tests).
 Not yet: photos (IndexedDB), export bundle, Furnisher-side `#import=` (M2),
-commutes (M3), mini plan renderer + furniture manager (M4). No git remote yet —
-create `kevinli-builds/MoveDay` on first push.
+commutes (M3), mini plan renderer + furniture manager (M4).
+
+## Git / deploy
+- **GitHub**: https://github.com/kevinli-builds/MoveDay (branch `main`)
+- Not yet deployed — when ready, import in Vercel (Next.js preset, static
+  export, no env vars needed) and add a Personal Site card per that repo's
+  conventions (GitHub badge now, Live badge once deployed).
