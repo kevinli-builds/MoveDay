@@ -113,3 +113,13 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 .rate-row button.on { border-color: var(--kraft-deep); background: #faf3e7; }
 
 .footnote { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
+
+/* ── plan attach (Furnisher handoff) ────────────────────── */
+.plan-attached {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border-radius: 8px; font-size: 13.5px;
+  background: #edf4ef; border: 1px solid #cfe3d4; color: var(--good);
+}
+.plan-paste-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.plan-paste-error { color: var(--bad); font-size: 12.5px; }
+.field .plan-attached + button, .field div > textarea { width: 100%; }

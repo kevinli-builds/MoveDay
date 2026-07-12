@@ -270,6 +270,17 @@ function ListingDialog({
             <label>Notes</label>
             <textarea rows={3} value={draft.notes ?? ''} onChange={(e) => set('notes', e.target.value || undefined)} />
           </div>
+          <div className="field full">
+            <label>Floor plan (from Furnisher)</label>
+            {draft.planJson ? (
+              <div className="plan-attached">
+                ✓ Plan attached — the 🛋️ Fit button opens it in Furnisher with your furniture staged.
+                <button type="button" className="subtle danger" onClick={() => set('planJson', undefined)}>Remove</button>
+              </div>
+            ) : (
+              <PlanPaste onAttach={(plan) => set('planJson', plan)} />
+            )}
+          </div>
         </div>
         <div className="dialog-actions">
           {onDelete && <button className="danger" onClick={() => { if (confirm('Delete this listing?')) onDelete() }}>Delete</button>}
@@ -277,6 +288,56 @@ function ListingDialog({
           <button onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>Save</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Paste-import of a Furnisher plan (FABLE_BRIEF §4): draw/AI-import the listing's
+// floor plan in Furnisher, copy its share link or plan JSON, paste either here.
+// Share links carry the plan in their #import= fragment; raw JSON is parsed
+// directly. Stored opaque — sanitized again wherever it renders.
+function PlanPaste({ onAttach }: { onAttach: (plan: Record<string, unknown>) => void }) {
+  const [text, setText] = useState('')
+  const [error, setError] = useState('')
+
+  const attach = async () => {
+    setError('')
+    const raw = text.trim()
+    if (!raw) return
+    try {
+      let plan: unknown
+      const frag = /#import=(.+)$/.exec(raw)
+      if (frag) {
+        const { decompressFromEncodedURIComponent } = await import('lz-string')
+        const json = decompressFromEncodedURIComponent(frag[1])
+        const payload = json ? (JSON.parse(json) as { plan?: unknown }) : null
+        plan = payload?.plan
+      } else {
+        plan = JSON.parse(raw)
+      }
+      if (!plan || typeof plan !== 'object' || Array.isArray(plan) || !Array.isArray((plan as { rooms?: unknown }).rooms)) {
+        setError('That doesn’t look like a Furnisher plan — paste a share link or the plan JSON (it should contain "rooms").')
+        return
+      }
+      onAttach(plan as Record<string, unknown>)
+      setText('')
+    } catch {
+      setError('Couldn’t read that — paste a Furnisher share link or valid plan JSON.')
+    }
+  }
+
+  return (
+    <div>
+      <textarea
+        rows={2}
+        placeholder="Paste a Furnisher share link (…#import=…) or plan JSON"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="plan-paste-row">
+        <button type="button" disabled={!text.trim()} onClick={attach}>Attach plan</button>
+        {error && <span className="plan-paste-error">{error}</span>}
       </div>
     </div>
   )

@@ -11,11 +11,15 @@ before building the handoff (section 4)._
 
 ## 0. Status ledger (2026-07-11) + how to pick up
 
-**Shipped ✓** — this brief; scaffold (M1 skeleton: data model, board, listing CRUD, local persistence).
+**Shipped ✓** — this brief; scaffold (M1 skeleton: data model, board, listing CRUD, local
+persistence); repo on GitHub (kevinli-builds/MoveDay) + Vercel; **M2 the bridge (2026-07-11)** —
+Furnisher side landed in that repo (`lib/share.ts`, `#import=` on mount, 🔗 copy-share-link; its
+commit af41d16), MoveDay side = PlanPaste in the listing editor (accepts a Furnisher share link
+OR raw plan JSON) feeding the existing 🛋️ Fit button → `composeFitCheckPlan` → Furnisher.
 **Next → (build order)** — finish M1 (photos via IndexedDB, export/import bundle);
-M2 Furnisher handoff (BOTH repos — see §4, the Furnisher-side change also ships
-that repo's parked "share links" P2); M3 commute anchors; M4 fit-check compose +
-mini plan renderer; M5 extras (AI paste-parse first).
+M3 commute anchors; M4 mini plan renderer + `myFurniture` manager (the Fit button currently
+stages an EMPTY furniture list until the manager exists — build it early in M4) + `#plan=`
+return route; M5 extras (AI paste-parse first).
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 
