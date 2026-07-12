@@ -279,3 +279,28 @@ the share-link "Copy plan JSON" fallback, paste into MoveDay.
   photos or notes into a handoff payload.
 - **Seasonality is fine** — this is a tool you reach for hard then shelve; do
   not add retention mechanics to fight its nature.
+
+---
+
+## Security & code-quality audit (2026-07-12, Fable portfolio pass)
+
+_New repo, M1 skeleton, PUBLIC. **Security surface is minimal by design** —
+local-first, no backend, no accounts, no secrets. Nothing sensitive to record
+privately. Verified the trust boundary is already right:_
+
+- `app/lib/sanitize.ts` (`safeColor` hex-allowlist blocks `url(...)` exfiltration;
+  `safeUrl` http(s)-only blocks `javascript:`/`data:`) is present and **wired into
+  `normalizeHunt()`** (`storage.ts`), which every loaded/imported hunt passes
+  through. This mirrors Furnisher's proven pattern — good instinct to copy it.
+
+**MD1 — carry the trust boundary into the M2 Furnisher handoff when you build it.**
+The inbound side (redeeming a `#import=` lz-string payload from Furnisher, and
+Furnisher redeeming MoveDay's) is attacker-controllable (anyone can craft a URL
+fragment). Ensure the unpack path runs the decoded object through `normalizeHunt()`
+/ the Furnisher-side equivalent **before** any field reaches a color, href, or SVG
+sink — don't trust `lz-string`-decoded JSON just because it "came from the other
+app." The brief already flags geometry is Furnisher's Plan shape; add "and passes
+Furnisher's `normalizePlan` on arrival" to the §4 protocol.
+
+**Quality:** already has vitest on the trust boundary + handoff — keep that bar as
+M1→M5 fill in. No other issues at this size.
