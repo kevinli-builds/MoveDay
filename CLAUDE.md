@@ -63,6 +63,7 @@ commutes (M3), mini plan renderer + furniture manager (M4).
 
 ## Git / deploy
 - **GitHub**: https://github.com/kevinli-builds/MoveDay (branch `main`)
-- Not yet deployed — when ready, import in Vercel (Next.js preset, static
-  export, no env vars needed) and add a Personal Site card per that repo's
-  conventions (GitHub badge now, Live badge once deployed).
+- **Live**: https://move-day.vercel.app (Vercel, Next.js static export, no env
+  vars). ⚠️ Use the **hyphenated** URL — the bare `moveday.vercel.app` is a
+  different, unrelated product. The repo `homepage` is set to the correct URL.
+- On the Personal Site as a project card (Live + GitHub badges) as of 2026-07-12.

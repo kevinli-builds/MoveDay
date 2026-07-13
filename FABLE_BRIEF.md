@@ -12,7 +12,9 @@ before building the handoff (section 4)._
 ## 0. Status ledger (2026-07-11) + how to pick up
 
 **Shipped ✓** — this brief; scaffold (M1 skeleton: data model, board, listing CRUD, local
-persistence); repo on GitHub (kevinli-builds/MoveDay) + Vercel; **M2 the bridge (2026-07-11)** —
+persistence); repo on GitHub (kevinli-builds/MoveDay) + Vercel, LIVE at **`move-day.vercel.app`**
+(NOTE: the bare `moveday.vercel.app` is a different, unrelated product — always use the hyphen);
+**M2 the bridge (2026-07-11)** —
 Furnisher side landed in that repo (`lib/share.ts`, `#import=` on mount, 🔗 copy-share-link; its
 commit af41d16), MoveDay side = PlanPaste in the listing editor (accepts a Furnisher share link
 OR raw plan JSON) feeding the existing 🛋️ Fit button → `composeFitCheckPlan` → Furnisher.
@@ -140,7 +142,7 @@ need originals).
 
 ## 4. The Furnisher handoff (the technical core)
 
-Two apps on different origins (`moveday.vercel.app` ↔ `furnisher.vercel.app`)
+Two apps on different origins (`move-day.vercel.app` ↔ `furnisher.vercel.app`)
 can't share localStorage, and Furnisher is a static export with no server. The
 bridge is the **URL fragment**: plan JSON, lz-string-compressed, carried in
 `#…` — fragments never hit server logs or Referer headers, and comfortably carry
