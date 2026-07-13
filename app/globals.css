@@ -59,6 +59,7 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
   position: sticky; top: 0;
 }
 .board th.active { color: var(--tape-deep); }
+.board tbody tr { cursor: pointer; } /* whole row opens Edit */
 .board tbody tr:hover { background: #fdfaf4; }
 .board tr.pinned { background: #f4f8fd; }
 .board td.num { font-variant-numeric: tabular-nums; text-align: right; }
@@ -78,6 +79,10 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 .stars { color: var(--kraft-deep); letter-spacing: 1px; }
 .pin-btn { opacity: 0.35; }
 .pin-btn.on, tr:hover .pin-btn { opacity: 1; }
+/* Touch screens have no hover — keep the pin affordance clearly visible */
+@media (hover: none) {
+  .pin-btn { opacity: 0.6; }
+}
 
 .empty {
   text-align: center; padding: 60px 20px; color: var(--muted);

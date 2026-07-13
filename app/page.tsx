@@ -123,18 +123,20 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
+              {/* The whole row opens Edit — on phones the action column sits
+                  past the horizontal scroll, so it can't be the only way in. */}
               {sorted.map((l) => (
-                <tr key={l.id} className={l.pinned ? 'pinned' : ''}>
+                <tr key={l.id} className={l.pinned ? 'pinned' : ''} onClick={() => setEditing(l)}>
                   <td>
                     <button
                       className={'subtle pin-btn' + (l.pinned ? ' on' : '')}
                       title={l.pinned ? 'Unpin' : 'Pin as favorite'}
-                      onClick={() => upsertListing({ ...l, pinned: !l.pinned })}
+                      onClick={(e) => { e.stopPropagation(); upsertListing({ ...l, pinned: !l.pinned }) }}
                     >📌</button>
                   </td>
                   <td className="name-cell">
                     {l.url && safeUrl(l.url) ? (
-                      <a href={safeUrl(l.url)!} target="_blank" rel="noopener noreferrer">{l.name}</a>
+                      <a href={safeUrl(l.url)!} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>{l.name}</a>
                     ) : l.name}
                   </td>
                   <td><span className={'pill ' + l.status}>{l.status}</span></td>
@@ -145,9 +147,9 @@ export default function Home() {
                   <td className="words">{l.tour?.threeWords ?? ''}</td>
                   <td>
                     {l.planJson ? (
-                      <button className="subtle" title="Open in Furnisher with your furniture staged" onClick={() => openInFurnisher(l)}>🛋️ Fit</button>
+                      <button className="subtle" title="Open in Furnisher with your furniture staged" onClick={(e) => { e.stopPropagation(); openInFurnisher(l) }}>🛋️ Fit</button>
                     ) : null}
-                    <button className="subtle" onClick={() => setEditing(l)}>Edit</button>
+                    <button className="subtle" onClick={(e) => { e.stopPropagation(); setEditing(l) }}>Edit</button>
                   </td>
                 </tr>
               ))}
