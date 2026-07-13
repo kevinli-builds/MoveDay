@@ -18,6 +18,8 @@ persistence); repo on GitHub (kevinli-builds/MoveDay) + Vercel, LIVE at **`move-
 Furnisher side landed in that repo (`lib/share.ts`, `#import=` on mount, 🔗 copy-share-link; its
 commit af41d16), MoveDay side = PlanPaste in the listing editor (accepts a Furnisher share link
 OR raw plan JSON) feeding the existing 🛋️ Fit button → `composeFitCheckPlan` → Furnisher.
+**Usability ✓ (2026-07-12)** — board rows open the edit dialog on tap (the action column
+sits past the horizontal scroll on phones); pin button visible at 0.6 under `(hover:none)`.
 **Next → (build order)** — finish M1 (photos via IndexedDB, export/import bundle);
 M3 commute anchors; M4 mini plan renderer + `myFurniture` manager (the Fit button currently
 stages an EMPTY furniture list until the manager exists — build it early in M4) + `#plan=`
