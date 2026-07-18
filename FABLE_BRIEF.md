@@ -20,6 +20,11 @@ commit af41d16), MoveDay side = PlanPaste in the listing editor (accepts a Furni
 OR raw plan JSON) feeding the existing 🛋️ Fit button → `composeFitCheckPlan` → Furnisher.
 **Usability ✓ (2026-07-12)** — board rows open the edit dialog on tap (the action column
 sits past the horizontal scroll on phones); pin button visible at 0.6 under `(hover:none)`.
+**Furniture manager + backup ✓ (2026-07-13)** — the M4 `myFurniture` manager pulled early
+(toolbar 🛋️ dialog; type picker mirrors Furnisher catalog values + footprint prefill;
+`lib/furnitureTypes.ts`), so **Fit now stages real furniture**; hunt **Export/Import**
+JSON bundle (normalizeHunt on the way in, confirm-overwrite, round-trip + hostile tests
+in `__tests__/bundle.test.ts`). Photos still excluded from the bundle (IndexedDB, M1).
 **Next → (build order)** — finish M1 (photos via IndexedDB, export/import bundle);
 M3 commute anchors; M4 mini plan renderer + `myFurniture` manager (the Fit button currently
 stages an EMPTY furniture list until the manager exists — build it early in M4) + `#plan=`
