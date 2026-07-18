@@ -119,6 +119,29 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 
 .footnote { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
 
+/* ── my-furniture manager ───────────────────────────── */
+.furn-hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.furn-empty { color: var(--muted); font-style: italic; font-size: 13.5px; margin: 4px 0 12px; }
+.furn-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.furn-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 8px; font-size: 14px;
+}
+.furn-row:nth-child(odd) { background: #fbf8f2; }
+.furn-dot { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+.furn-name { font-weight: 600; }
+.furn-dims { color: var(--muted); font-size: 12.5px; flex: 1; }
+.furn-form { border-top: 1px solid var(--line); padding-top: 12px; }
+.furn-dims-inputs { display: flex; align-items: center; gap: 6px; }
+.furn-dims-inputs input { width: 80px; }
+.furn-dims-inputs span { color: var(--muted); }
+.furn-colors { display: flex; gap: 8px; }
+.furn-swatch {
+  width: 28px; height: 28px; border-radius: 8px; border: 2px solid transparent;
+  padding: 0; cursor: pointer;
+}
+.furn-swatch.on { border-color: var(--ink); }
+
 /* ── plan attach (Furnisher handoff) ────────────────────── */
 .plan-attached {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
