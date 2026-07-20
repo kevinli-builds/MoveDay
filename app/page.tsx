@@ -10,6 +10,16 @@ import { defaultHunt, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
 import { composeFitCheckPlan, furnisherImportUrl } from './lib/handoff'
 import { FURN_COLORS, FURN_TYPES } from './lib/furnitureTypes'
 import { safeUrl } from './lib/sanitize'
+import {
+  addPhotoFromDataUri,
+  addPhotoFromFile,
+  blobToDataUri,
+  deletePhotos,
+  getPhotoBlob,
+  MAX_PHOTOS_PER_LISTING,
+  sweepOrphanPhotos,
+  validateBundlePhotos,
+} from './lib/photos'
 
 type SortKey = 'name' | 'status' | 'rentMonthly' | 'sqft' | 'psf' | 'rating' | 'createdAt'
 
@@ -40,8 +50,11 @@ export default function Home() {
 
   // Load after mount (avoids SSR/hydration mismatch — Furnisher pattern).
   useEffect(() => {
-    setHunt(loadHunt())
+    const h = loadHunt()
+    setHunt(h)
     setLoaded(true)
+    // Tidy photo blobs no listing references (canceled edits, old imports).
+    void sweepOrphanPhotos(h.listings.flatMap((l) => l.photoIds))
   }, [])
   useEffect(() => {
     if (loaded) saveHunt(hunt)
@@ -57,8 +70,11 @@ export default function Home() {
         : [...h.listings, l],
     }))
 
-  const removeListing = (id: string) =>
+  const removeListing = (id: string) => {
+    const gone = hunt.listings.find((x) => x.id === id)
+    if (gone && gone.photoIds.length > 0) void deletePhotos(gone.photoIds)
     update((h) => ({ ...h, listings: h.listings.filter((x) => x.id !== id) }))
+  }
 
   const sorted = useMemo(() => {
     const rows = [...hunt.listings].sort((a, b) => {
@@ -77,9 +93,15 @@ export default function Home() {
   }
 
   // ── Export / import: the hunt is localStorage-only, so a JSON bundle is the
-  // backup story. Photos (IndexedDB, M1 remaining) are not in the bundle.
-  const exportHunt = () => {
-    const blob = new Blob([JSON.stringify(hunt, null, 2)], { type: 'application/json' })
+  // backup story. Photos ride along inlined as data URIs (re-encoded on upload,
+  // so a full hunt stays a sane file size).
+  const exportHunt = async () => {
+    const photos: Record<string, string> = {}
+    for (const id of hunt.listings.flatMap((l) => l.photoIds)) {
+      const blob = await getPhotoBlob(id)
+      if (blob) photos[id] = await blobToDataUri(blob)
+    }
+    const blob = new Blob([JSON.stringify({ ...hunt, photos }, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     const slug = hunt.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'hunt'
@@ -93,8 +115,13 @@ export default function Home() {
     e.target.value = '' // allow re-picking the same file
     if (!file) return
     let next: Hunt
+    let photos: Record<string, string>
     try {
-      next = normalizeHunt(JSON.parse(await file.text()))
+      const parsed: unknown = JSON.parse(await file.text())
+      next = normalizeHunt(parsed)
+      // The photos block is untrusted file content — strict-validated, and only
+      // ids the imported hunt actually references get stored.
+      photos = validateBundlePhotos((parsed as { photos?: unknown })?.photos)
     } catch {
       alert("That file doesn't look like a MoveDay export.")
       return
@@ -104,7 +131,13 @@ export default function Home() {
       `with "${next.name}" (${next.listings.length} listing${next.listings.length === 1 ? '' : 's'})? ` +
       'Your current hunt will be overwritten — Export it first if unsure.',
     )
-    if (ok) update(() => next)
+    if (!ok) return
+    const referenced = new Set(next.listings.flatMap((l) => l.photoIds))
+    for (const [id, uri] of Object.entries(photos)) {
+      if (referenced.has(id)) await addPhotoFromDataUri(id, uri)
+    }
+    update(() => next)
+    void sweepOrphanPhotos([...referenced])
   }
 
   const openInFurnisher = (l: Listing) => {
@@ -178,6 +211,11 @@ export default function Home() {
                     {l.url && safeUrl(l.url) ? (
                       <a href={safeUrl(l.url)!} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>{l.name}</a>
                     ) : l.name}
+                    {l.photoIds.length > 0 && (
+                      <span className="photo-count" title={`${l.photoIds.length} photo${l.photoIds.length === 1 ? '' : 's'}`}>
+                        📷{l.photoIds.length}
+                      </span>
+                    )}
                   </td>
                   <td><span className={'pill ' + l.status}>{l.status}</span></td>
                   <td className="num">{l.rentMonthly != null ? `$${l.rentMonthly.toLocaleString()}` : '—'}</td>
@@ -199,8 +237,8 @@ export default function Home() {
       )}
 
       <p className="footnote">
-        Everything stays on this device (localStorage). Export/backup, photos, commutes and the
-        Furnisher bridge land next — see FABLE_BRIEF.md.
+        Everything stays on this device (localStorage + IndexedDB for photos); Export bundles it
+        all into one file. Commutes and the Furnisher return-trip land next — see FABLE_BRIEF.md.
       </p>
 
       {editing && (
@@ -246,8 +284,74 @@ function ListingDialog({
   const set = <K extends keyof Listing>(k: K, v: Listing[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const numField = (v: string) => (v.trim() === '' ? undefined : Number(v))
 
+  // ── Photos. Blobs live in IndexedDB; the dialog only holds object URLs.
+  // Deletion is deferred so Cancel is safe: photos added this session are
+  // deleted on Cancel, photos removed this session are deleted only on Save.
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
+  const [lightbox, setLightbox] = useState<string | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const photoRef = useRef<HTMLInputElement>(null)
+  const addedRef = useRef<string[]>([])
+  const removedRef = useRef<string[]>([])
+  const urlsRef = useRef<Record<string, string>>({})
+  urlsRef.current = photoUrls
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const fresh: Record<string, string> = {}
+      for (const id of draft.photoIds) {
+        if (urlsRef.current[id]) continue
+        const blob = await getPhotoBlob(id)
+        if (blob) fresh[id] = URL.createObjectURL(blob)
+      }
+      if (alive && Object.keys(fresh).length > 0) setPhotoUrls((p) => ({ ...p, ...fresh }))
+    })()
+    return () => { alive = false }
+  }, [draft.photoIds])
+  useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
+
+  const onAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+    const room = MAX_PHOTOS_PER_LISTING - draft.photoIds.length
+    if (files.length > room) alert(`Up to ${MAX_PHOTOS_PER_LISTING} photos per listing — adding the first ${Math.max(room, 0)}.`)
+    setPhotoBusy(true)
+    try {
+      for (const f of files.slice(0, Math.max(room, 0))) {
+        const id = await addPhotoFromFile(f)
+        if (!id) continue
+        addedRef.current.push(id)
+        setDraft((d) => ({ ...d, photoIds: [...d.photoIds, id] }))
+      }
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
+  const removePhoto = (id: string) => {
+    setDraft((d) => ({ ...d, photoIds: d.photoIds.filter((p) => p !== id) }))
+    if (lightbox === id) setLightbox(null)
+    if (addedRef.current.includes(id)) {
+      addedRef.current = addedRef.current.filter((x) => x !== id)
+      void deletePhotos([id]) // never saved anywhere — safe to drop now
+    } else {
+      removedRef.current.push(id)
+    }
+  }
+
+  const saveWithPhotoCleanup = () => {
+    if (removedRef.current.length > 0) void deletePhotos(removedRef.current)
+    onSave(draft)
+  }
+  const cancelWithPhotoCleanup = () => {
+    if (addedRef.current.length > 0) void deletePhotos(addedRef.current)
+    onClose()
+  }
+
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={cancelWithPhotoCleanup}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
         <h2>{listing ? 'Edit listing' : 'Add listing'}</h2>
         <div className="grid2">
@@ -321,6 +425,28 @@ function ListingDialog({
             <textarea rows={3} value={draft.notes ?? ''} onChange={(e) => set('notes', e.target.value || undefined)} />
           </div>
           <div className="field full">
+            <label>Photos ({draft.photoIds.length}/{MAX_PHOTOS_PER_LISTING})</label>
+            <div className="photo-strip">
+              {draft.photoIds.map((id) => (
+                <div className="photo-thumb" key={id}>
+                  {photoUrls[id] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={photoUrls[id]} alt="" onClick={() => setLightbox(id)} />
+                  ) : (
+                    <span className="photo-loading">…</span>
+                  )}
+                  <button type="button" className="photo-remove" title="Remove photo" aria-label="Remove photo" onClick={() => removePhoto(id)}>×</button>
+                </div>
+              ))}
+              {draft.photoIds.length < MAX_PHOTOS_PER_LISTING && (
+                <button type="button" className="photo-add" disabled={photoBusy} onClick={() => photoRef.current?.click()}>
+                  {photoBusy ? '…' : '+ 📷'}
+                </button>
+              )}
+              <input ref={photoRef} type="file" accept="image/*" multiple hidden onChange={onAddPhotos} />
+            </div>
+          </div>
+          <div className="field full">
             <label>Floor plan (from Furnisher)</label>
             {draft.planJson ? (
               <div className="plan-attached">
@@ -333,11 +459,17 @@ function ListingDialog({
           </div>
         </div>
         <div className="dialog-actions">
-          {onDelete && <button className="danger" onClick={() => { if (confirm('Delete this listing?')) onDelete() }}>Delete</button>}
+          {onDelete && <button className="danger" onClick={() => { if (confirm('Delete this listing?')) { void deletePhotos(addedRef.current); onDelete() } }}>Delete</button>}
           <div className="spacer" />
-          <button onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>Save</button>
+          <button onClick={cancelWithPhotoCleanup}>Cancel</button>
+          <button className="primary" disabled={!draft.name.trim()} onClick={saveWithPhotoCleanup}>Save</button>
         </div>
+        {lightbox && photoUrls[lightbox] && (
+          <div className="lightbox" onClick={() => setLightbox(null)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrls[lightbox]} alt="" />
+          </div>
+        )}
       </div>
     </div>
   )

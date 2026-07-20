@@ -109,7 +109,9 @@ function normalizeListing(raw: unknown, i: number): Listing | null {
     hasElevator: typeof l.hasElevator === 'boolean' ? l.hasElevator : undefined,
     availableFrom: str(l.availableFrom),
     notes: str(l.notes)?.slice(0, 5000),
-    photoIds: Array.isArray(l.photoIds) ? l.photoIds.filter((p): p is string => typeof p === 'string') : [],
+    // Cap mirrors MAX_PHOTOS_PER_LISTING (lib/photos.ts) — hostile bundles
+    // can't stuff unbounded ids.
+    photoIds: Array.isArray(l.photoIds) ? l.photoIds.filter((p): p is string => typeof p === 'string').slice(0, 12) : [],
     commutes: normalizeCommutes(l.commutes),
     tour: normalizeTour(l.tour),
     // Stored opaque; sanitized again at render time by the mini-map (M4).

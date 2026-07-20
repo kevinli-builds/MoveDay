@@ -25,10 +25,17 @@ sits past the horizontal scroll on phones); pin button visible at 0.6 under `(ho
 `lib/furnitureTypes.ts`), so **Fit now stages real furniture**; hunt **Export/Import**
 JSON bundle (normalizeHunt on the way in, confirm-overwrite, round-trip + hostile tests
 in `__tests__/bundle.test.ts`). Photos still excluded from the bundle (IndexedDB, M1).
-**Next → (build order)** — finish M1 (photos via IndexedDB, export/import bundle);
-M3 commute anchors; M4 mini plan renderer + `myFurniture` manager (the Fit button currently
-stages an EMPTY furniture list until the manager exists — build it early in M4) + `#plan=`
-return route; M5 extras (AI paste-parse first).
+**M1 COMPLETE (2026-07-18) — photos shipped.** `lib/photos.ts`: uploads canvas-re-encoded
+(≤1600px JPEG) into IndexedDB (`idb-keyval`, store `moveday-photos`); dialog photo strip
+(thumbs + always-visible remove + lightbox, 12/listing cap mirrored in `normalizeHunt`);
+📷N on board rows; deferred deletion so Cancel is safe (added-then-canceled photos are
+dropped, removed-then-saved ones deleted on save); listing delete + orphan sweep keep the
+store tidy. **Export bundle now inlines photos as data URIs** and import runs them through
+`validateBundlePhotos` (strict MIME/base64/size allowlist — SVG + script data-URIs
+rejected; only ids the imported hunt references get stored). 9 new tests (25 total).
+Verified E2E in the browser: upload → thumb → save → reload persists → delete empties IDB.
+**Next → (build order)** — M3 commute anchors; M4 mini plan renderer + `#plan=`
+return route (`myFurniture` manager already shipped); M5 extras (AI paste-parse first).
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 
