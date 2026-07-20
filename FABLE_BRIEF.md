@@ -34,8 +34,19 @@ store tidy. **Export bundle now inlines photos as data URIs** and import runs th
 `validateBundlePhotos` (strict MIME/base64/size allowlist — SVG + script data-URIs
 rejected; only ids the imported hunt references get stored). 9 new tests (25 total).
 Verified E2E in the browser: upload → thumb → save → reload persists → delete empties IDB.
-**Next → (build order)** — M3 commute anchors; M4 mini plan renderer + `#plan=`
-return route (`myFurniture` manager already shipped); M5 extras (AI paste-parse first).
+**M3 commutes SHIPPED (2026-07-18).** `lib/commute.ts` + 📍 Anchors dialog (add/remove,
+Nominatim geocode-on-save w/ ✓ located / ⚠ locate-retry) + listing Commutes section
+(Get-estimates button geocodes the listing once, caches `Listing.lat/lon`) + board
+"→ ⟨anchor 1⟩" sortable drive column + OSM attribution in the footer/dialog.
+**⚠ Empirical finding, load-bearing:** the OSRM public demo routes EVERY profile with
+the car graph (driving/foot/bike returned identical durations over a 20 km pair) — so
+OSRM is used for DRIVE only; **walk is always the straight-line estimate** (13 min/km ×
+1.3 grid factor + overhead), labelled "rough est." unconditionally. Drive falls back to
+straight-line (`rough` flag on CommuteEntry) when OSRM is down/times out (5 s). Transit
+stays manual + Google Maps deep link, per spec. 9 commute tests (34 total). Verified
+E2E live: Nominatim geocode, OSRM 4m drive + 16m rough walk GCT→ESB, board column.
+**Next → (build order)** — M4 mini plan renderer + `#plan=` return route
+(`myFurniture` manager already shipped); M5 extras (AI paste-parse first).
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 

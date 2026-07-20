@@ -4,7 +4,7 @@
 // State lives in one Hunt object; every change persists to localStorage.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FurnTemplate, Hunt, Listing, ListingStatus } from './lib/types'
+import type { Anchor, CommuteEntry, FurnTemplate, Hunt, Listing, ListingStatus } from './lib/types'
 import { LISTING_STATUSES, dollarsPerSqft } from './lib/types'
 import { defaultHunt, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
 import { composeFitCheckPlan, furnisherImportUrl } from './lib/handoff'
@@ -20,14 +20,15 @@ import {
   sweepOrphanPhotos,
   validateBundlePhotos,
 } from './lib/photos'
+import { driveMinutes, geocode, sleep, transitDeepLink, walkFallbackMinutes } from './lib/commute'
 
-type SortKey = 'name' | 'status' | 'rentMonthly' | 'sqft' | 'psf' | 'rating' | 'createdAt'
+type SortKey = 'name' | 'status' | 'rentMonthly' | 'sqft' | 'psf' | 'rating' | 'commute' | 'createdAt'
 
 const STATUS_ORDER: Record<ListingStatus, number> = {
   signed: 0, applied: 1, toured: 2, touring: 3, saved: 4, rejected: 5,
 }
 
-function sortValue(l: Listing, key: SortKey): number | string {
+function sortValue(l: Listing, key: SortKey, anchor0Id?: string): number | string {
   switch (key) {
     case 'name': return l.name.toLowerCase()
     case 'status': return STATUS_ORDER[l.status]
@@ -35,6 +36,7 @@ function sortValue(l: Listing, key: SortKey): number | string {
     case 'sqft': return l.sqft ?? -1
     case 'psf': return dollarsPerSqft(l) ?? Infinity
     case 'rating': return l.tour?.rating ?? -1
+    case 'commute': return l.commutes.find((c) => c.anchorId === anchor0Id)?.driveMin ?? Infinity
     case 'createdAt': return l.createdAt
   }
 }
@@ -44,6 +46,7 @@ export default function Home() {
   const [loaded, setLoaded] = useState(false)
   const [editing, setEditing] = useState<Listing | 'new' | null>(null)
   const [furnOpen, setFurnOpen] = useState(false)
+  const [anchorsOpen, setAnchorsOpen] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortAsc, setSortAsc] = useState(true)
   const importRef = useRef<HTMLInputElement>(null)
@@ -76,16 +79,17 @@ export default function Home() {
     update((h) => ({ ...h, listings: h.listings.filter((x) => x.id !== id) }))
   }
 
+  const anchor0 = hunt.anchors[0]
   const sorted = useMemo(() => {
     const rows = [...hunt.listings].sort((a, b) => {
-      const av = sortValue(a, sortKey)
-      const bv = sortValue(b, sortKey)
+      const av = sortValue(a, sortKey, anchor0?.id)
+      const bv = sortValue(b, sortKey, anchor0?.id)
       const cmp = av < bv ? -1 : av > bv ? 1 : 0
       return sortAsc ? cmp : -cmp
     })
     // Pinned floats to the top regardless of sort.
     return rows.sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false))
-  }, [hunt.listings, sortKey, sortAsc])
+  }, [hunt.listings, sortKey, sortAsc, anchor0?.id])
 
   const clickSort = (key: SortKey) => {
     if (key === sortKey) setSortAsc(!sortAsc)
@@ -167,6 +171,9 @@ export default function Home() {
         <button onClick={() => setFurnOpen(true)}>
           🛋️ My furniture{hunt.myFurniture.length > 0 ? ` (${hunt.myFurniture.length})` : ''}
         </button>
+        <button onClick={() => setAnchorsOpen(true)}>
+          📍 Anchors{hunt.anchors.length > 0 ? ` (${hunt.anchors.length})` : ''}
+        </button>
         <div className="spacer" />
         <button className="subtle" onClick={exportHunt} title="Download this hunt as a JSON backup">Export</button>
         <button className="subtle" onClick={() => importRef.current?.click()} title="Restore a hunt from a JSON backup">Import</button>
@@ -191,6 +198,7 @@ export default function Home() {
                 {th('Sqft', 'sqft', true)}
                 {th('$/sqft', 'psf', true)}
                 {th('Gut', 'rating')}
+                {anchor0 && th(`→ ${anchor0.name}`, 'commute', true)}
                 <th>Three words</th>
                 <th></th>
               </tr>
@@ -222,6 +230,15 @@ export default function Home() {
                   <td className="num">{l.sqft ?? '—'}</td>
                   <td className="num">{dollarsPerSqft(l) != null ? `$${dollarsPerSqft(l)!.toFixed(2)}` : '—'}</td>
                   <td><span className="stars">{l.tour?.rating ? '★'.repeat(l.tour.rating) : '—'}</span></td>
+                  {anchor0 && (
+                    <td className="num commute-cell">
+                      {(() => {
+                        const c = l.commutes.find((x) => x.anchorId === anchor0.id)
+                        if (!c || c.driveMin == null) return '—'
+                        return <span title={c.rough ? 'rough est. (straight-line)' : 'est. (OSRM)'}>🚗{c.driveMin}m{c.rough ? '~' : ''}</span>
+                      })()}
+                    </td>
+                  )}
                   <td className="words">{l.tour?.threeWords ?? ''}</td>
                   <td>
                     {l.planJson ? (
@@ -238,12 +255,14 @@ export default function Home() {
 
       <p className="footnote">
         Everything stays on this device (localStorage + IndexedDB for photos); Export bundles it
-        all into one file. Commutes and the Furnisher return-trip land next — see FABLE_BRIEF.md.
+        all into one file. Commute estimates are estimates — geocoding © OpenStreetMap
+        contributors, routing by the OSRM demo server.
       </p>
 
       {editing && (
         <ListingDialog
           listing={editing === 'new' ? null : editing}
+          anchors={hunt.anchors}
           onSave={(l) => { upsertListing(l); setEditing(null) }}
           onDelete={editing !== 'new' ? () => { removeListing((editing as Listing).id); setEditing(null) } : undefined}
           onClose={() => setEditing(null)}
@@ -257,6 +276,14 @@ export default function Home() {
           onClose={() => setFurnOpen(false)}
         />
       )}
+
+      {anchorsOpen && (
+        <AnchorsDialog
+          anchors={hunt.anchors}
+          onChange={(anchors) => update((h) => ({ ...h, anchors }))}
+          onClose={() => setAnchorsOpen(false)}
+        />
+      )}
     </main>
   )
 }
@@ -264,9 +291,10 @@ export default function Home() {
 // ── Add / edit dialog (includes post-tour capture) ─────────────────
 
 function ListingDialog({
-  listing, onSave, onDelete, onClose,
+  listing, anchors, onSave, onDelete, onClose,
 }: {
   listing: Listing | null
+  anchors: Anchor[]
   onSave: (l: Listing) => void
   onDelete?: () => void
   onClose: () => void
@@ -447,6 +475,10 @@ function ListingDialog({
             </div>
           </div>
           <div className="field full">
+            <label>Commutes</label>
+            <CommutesSection draft={draft} anchors={anchors} setDraft={setDraft} />
+          </div>
+          <div className="field full">
             <label>Floor plan (from Furnisher)</label>
             {draft.planJson ? (
               <div className="plan-attached">
@@ -470,6 +502,211 @@ function ListingDialog({
             <img src={photoUrls[lightbox]} alt="" />
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Commutes (FABLE_BRIEF §5): OSRM estimates + fallback, manual transit ────
+
+function CommutesSection({
+  draft, anchors, setDraft,
+}: {
+  draft: Listing
+  anchors: Anchor[]
+  setDraft: React.Dispatch<React.SetStateAction<Listing>>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+
+  if (anchors.length === 0) {
+    return (
+      <p className="commute-hint">
+        Add anchors (Work, Gym, a friend&apos;s place…) via 📍 Anchors in the toolbar, then
+        estimate each listing&apos;s commute here.
+      </p>
+    )
+  }
+
+  const entryFor = (anchorId: string): CommuteEntry | undefined =>
+    draft.commutes.find((c) => c.anchorId === anchorId)
+
+  const upsertEntry = (entry: CommuteEntry) =>
+    setDraft((d) => ({
+      ...d,
+      commutes: d.commutes.some((c) => c.anchorId === entry.anchorId)
+        ? d.commutes.map((c) => (c.anchorId === entry.anchorId ? { ...c, ...entry } : c))
+        : [...d.commutes, entry],
+    }))
+
+  const getEstimates = async () => {
+    if (!draft.address?.trim()) {
+      setNote('Add the listing address first.')
+      return
+    }
+    setBusy(true)
+    setNote('')
+    try {
+      // Geocode the listing once (Nominatim wants ≥1s between requests).
+      let from = draft.lat != null && draft.lon != null ? { lat: draft.lat, lon: draft.lon } : null
+      if (!from) {
+        from = await geocode(draft.address)
+        if (!from) {
+          setNote("Couldn't find that address — check it and try again.")
+          return
+        }
+        const { lat, lon } = from
+        setDraft((d) => ({ ...d, lat, lon }))
+      }
+      const ready = anchors.filter((a) => a.lat != null && a.lon != null)
+      for (const a of ready) {
+        const to = { lat: a.lat!, lon: a.lon! }
+        // Drive via OSRM; walk is ALWAYS the straight-line estimate — the OSRM
+        // public demo routes every profile with the car graph (lib/commute.ts).
+        const drive = await driveMinutes(from, to)
+        upsertEntry({
+          anchorId: a.id,
+          driveMin: drive.minutes,
+          walkMin: walkFallbackMinutes(from, to),
+          transitMin: entryFor(a.id)?.transitMin,
+          rough: drive.rough ? true : undefined,
+        })
+        await sleep(300) // gentle on the demo server
+      }
+      if (ready.length < anchors.length) {
+        setNote(`${anchors.length - ready.length} anchor(s) have no location yet — open 📍 Anchors to retry their geocoding.`)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="commutes">
+      {anchors.map((a) => {
+        const c = entryFor(a.id)
+        return (
+          <div className="commute-row" key={a.id}>
+            <span className="commute-name">{a.name}</span>
+            <span className="commute-chips">
+              {c?.driveMin != null && <span className="chip">🚗 {c.driveMin}m {c.rough ? 'rough est.' : 'est.'}</span>}
+              {c?.walkMin != null && <span className="chip">🚶 {c.walkMin}m rough est.</span>}
+              {c?.driveMin == null && c?.walkMin == null && <span className="chip empty">no estimate yet</span>}
+            </span>
+            <span className="commute-transit">
+              🚇
+              <input
+                type="number"
+                min="0"
+                placeholder="min"
+                value={c?.transitMin ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value.trim() === '' ? undefined : Math.max(0, Number(e.target.value))
+                  upsertEntry({ anchorId: a.id, ...entryFor(a.id), transitMin: Number.isFinite(v as number) ? v : undefined })
+                }}
+              />
+              {draft.address && a.address && (
+                <a
+                  href={transitDeepLink(draft.address, a.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Check transit time on Google Maps, then type it in"
+                >check ↗</a>
+              )}
+            </span>
+          </div>
+        )
+      })}
+      <div className="commute-actions">
+        <button type="button" disabled={busy} onClick={getEstimates}>
+          {busy ? 'Estimating…' : draft.commutes.length > 0 ? '↻ Refresh estimates' : 'Get estimates'}
+        </button>
+        {note && <span className="commute-note">{note}</span>}
+      </div>
+    </div>
+  )
+}
+
+// ── Anchors manager (FABLE_BRIEF §5): the places your life happens ──────────
+
+function AnchorsDialog({
+  anchors, onChange, onClose,
+}: {
+  anchors: Anchor[]
+  onChange: (anchors: Anchor[]) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const geocodeAnchor = async (list: Anchor[], id: string) => {
+    const a = list.find((x) => x.id === id)
+    if (!a || !a.address.trim()) return
+    setBusyId(id)
+    try {
+      const hit = await geocode(a.address)
+      onChange(list.map((x) => (x.id === id ? { ...x, lat: hit?.lat, lon: hit?.lon } : x)))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const add = async () => {
+    if (!name.trim() || !address.trim()) return
+    const a: Anchor = {
+      id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: name.trim(),
+      address: address.trim(),
+    }
+    const next = [...anchors, a]
+    onChange(next)
+    setName('')
+    setAddress('')
+    await geocodeAnchor(next, a.id)
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h2>📍 Anchors</h2>
+        <p className="commute-hint">
+          The places your life happens — every listing gets commute estimates against these.
+        </p>
+        {anchors.map((a) => (
+          <div className="anchor-row" key={a.id}>
+            <span className="anchor-name">{a.name}</span>
+            <span className="anchor-addr">{a.address}</span>
+            {a.lat != null && a.lon != null ? (
+              <span className="anchor-ok" title={`${a.lat.toFixed(4)}, ${a.lon.toFixed(4)}`}>✓ located</span>
+            ) : (
+              <button
+                type="button"
+                className="subtle"
+                disabled={busyId === a.id}
+                onClick={() => geocodeAnchor(anchors, a.id)}
+              >{busyId === a.id ? '…' : '⚠ locate'}</button>
+            )}
+            <button
+              type="button"
+              className="subtle danger"
+              title="Remove anchor"
+              onClick={() => onChange(anchors.filter((x) => x.id !== a.id))}
+            >×</button>
+          </div>
+        ))}
+        {anchors.length === 0 && <p className="commute-hint">No anchors yet.</p>}
+        <div className="anchor-add">
+          <input placeholder="Name (Work)" value={name} onChange={(e) => setName(e.target.value)} />
+          <input placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void add() }} />
+          <button type="button" className="primary" disabled={!name.trim() || !address.trim()} onClick={() => void add()}>Add</button>
+        </div>
+        <p className="commute-hint">Geocoding by Nominatim © OpenStreetMap contributors.</p>
+        <div className="dialog-actions">
+          <div className="spacer" />
+          <button onClick={onClose}>Done</button>
+        </div>
       </div>
     </div>
   )

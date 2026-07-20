@@ -69,6 +69,7 @@ function normalizeCommutes(raw: unknown): CommuteEntry[] {
       driveMin: posNum(c.driveMin),
       walkMin: posNum(c.walkMin),
       transitMin: posNum(c.transitMin),
+      rough: c.rough === true ? true : undefined,
     }))
     .filter((c) => c.anchorId)
 }
@@ -109,6 +110,8 @@ function normalizeListing(raw: unknown, i: number): Listing | null {
     hasElevator: typeof l.hasElevator === 'boolean' ? l.hasElevator : undefined,
     availableFrom: str(l.availableFrom),
     notes: str(l.notes)?.slice(0, 5000),
+    lat: num(l.lat),
+    lon: num(l.lon),
     // Cap mirrors MAX_PHOTOS_PER_LISTING (lib/photos.ts) — hostile bundles
     // can't stuff unbounded ids.
     photoIds: Array.isArray(l.photoIds) ? l.photoIds.filter((p): p is string => typeof p === 'string').slice(0, 12) : [],

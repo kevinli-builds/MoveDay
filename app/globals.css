@@ -117,6 +117,39 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 .rate-row button { padding: 4px 8px; font-size: 18px; line-height: 1; border-radius: 6px; }
 .rate-row button.on { border-color: var(--kraft-deep); background: #faf3e7; }
 
+/* ── Commutes (dialog section + board column + anchors dialog) ──── */
+.commutes { display: flex; flex-direction: column; gap: 6px; }
+.commute-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fdfcf9;
+}
+.commute-name { font-weight: 600; min-width: 70px; }
+.commute-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.chip {
+  font-size: 12px; padding: 3px 8px; border-radius: 999px;
+  background: #efe9dd; border: 1px solid var(--line); white-space: nowrap;
+}
+.chip.empty { color: var(--muted); background: transparent; border-style: dashed; }
+.commute-transit { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.commute-transit input { width: 58px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.commute-transit a { font-size: 12px; color: var(--tape); }
+.commute-actions { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.commute-note { font-size: 12px; color: var(--muted); }
+.commute-hint { font-size: 13px; color: var(--muted); margin: 4px 0; }
+.commute-cell { white-space: nowrap; }
+.anchor-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 8px;
+  border-bottom: 1px solid var(--line); flex-wrap: wrap;
+}
+.anchor-name { font-weight: 600; min-width: 70px; }
+.anchor-addr { flex: 1; min-width: 140px; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anchor-ok { color: #2e7d4f; font-size: 12px; white-space: nowrap; }
+.anchor-add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.anchor-add input {
+  flex: 1; min-width: 120px; font: inherit; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fdfcf9;
+}
+
 /* ── Listing photos (dialog strip + board count + lightbox) ─────── */
 .photo-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .photo-thumb {

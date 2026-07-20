@@ -27,6 +27,7 @@ export interface CommuteEntry {
   driveMin?: number // OSRM estimate — always rendered with "est."
   walkMin?: number // OSRM estimate
   transitMin?: number // manual — user reads it off the Google Maps deep link
+  rough?: boolean // drive/walk came from the straight-line fallback, not OSRM
 }
 
 export interface TourNotes {
@@ -66,6 +67,8 @@ export interface Listing {
   hasElevator?: boolean
   availableFrom?: string // ISO date
   notes?: string
+  lat?: number // geocoded once from address via Nominatim, cached here
+  lon?: number
   photoIds: string[] // IndexedDB keys — blobs never touch localStorage
   commutes: CommuteEntry[]
   tour?: TourNotes
