@@ -7,9 +7,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, CommuteEntry, FurnTemplate, Hunt, Listing, ListingStatus } from './lib/types'
 import { LISTING_STATUSES, dollarsPerSqft } from './lib/types'
 import { defaultHunt, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
-import { composeFitCheckPlan, furnisherImportUrl } from './lib/handoff'
+import { composeFitCheckPlan, furnisherImportUrl, unpackHandoff } from './lib/handoff'
 import { FURN_COLORS, FURN_TYPES } from './lib/furnitureTypes'
 import { safeUrl } from './lib/sanitize'
+import { PlanMiniMap } from './components/PlanMiniMap'
 import {
   addPhotoFromDataUri,
   addPhotoFromFile,
@@ -50,6 +51,8 @@ export default function Home() {
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortAsc, setSortAsc] = useState(true)
   const importRef = useRef<HTMLInputElement>(null)
+  // A plan arriving back from Furnisher via #plan= (M4 return trip).
+  const [incomingPlan, setIncomingPlan] = useState<{ name: string; plan: Record<string, unknown>; listingId?: string } | null>(null)
 
   // Load after mount (avoids SSR/hydration mismatch — Furnisher pattern).
   useEffect(() => {
@@ -58,7 +61,23 @@ export default function Home() {
     setLoaded(true)
     // Tidy photo blobs no listing references (canceled edits, old imports).
     void sweepOrphanPhotos(h.listings.flatMap((l) => l.photoIds))
+    // A Furnisher "Send to MoveDay" link lands as #plan=<packed>. Clear the hash
+    // first (so refresh doesn't re-prompt), then stage the plan for attach —
+    // untrusted, kept opaque and only ever rendered through the sanitizing
+    // mini-map / re-sent to Furnisher (which re-normalizes on its side).
+    const m = /^#plan=(.+)$/.exec(window.location.hash)
+    if (m) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      const payload = unpackHandoff(m[1])
+      if (payload) setIncomingPlan({ name: payload.name, plan: payload.plan, listingId: payload.listingId })
+    }
   }, [])
+
+  const attachPlan = (listingId: string, plan: Record<string, unknown>) => {
+    const target = hunt.listings.find((x) => x.id === listingId)
+    if (target) upsertListing({ ...target, planJson: plan })
+    setIncomingPlan(null)
+  }
   useEffect(() => {
     if (loaded) saveHunt(hunt)
   }, [hunt, loaded])
@@ -284,7 +303,77 @@ export default function Home() {
           onClose={() => setAnchorsOpen(false)}
         />
       )}
+
+      {incomingPlan && (
+        <IncomingPlanDialog
+          incoming={incomingPlan}
+          listings={hunt.listings}
+          onAttach={attachPlan}
+          onClose={() => setIncomingPlan(null)}
+        />
+      )}
     </main>
+  )
+}
+
+// ── Return trip: a plan arriving from Furnisher (#plan=) → attach it ─────────
+// If the payload names a listing (round-trip from a Fit check) we offer that
+// one directly; otherwise the user picks which listing it belongs to.
+function IncomingPlanDialog({
+  incoming, listings, onAttach, onClose,
+}: {
+  incoming: { name: string; plan: Record<string, unknown>; listingId?: string }
+  listings: Listing[]
+  onAttach: (listingId: string, plan: Record<string, unknown>) => void
+  onClose: () => void
+}) {
+  const matched = incoming.listingId ? listings.find((l) => l.id === incoming.listingId) : undefined
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <h2>Plan from Furnisher</h2>
+        <div className="incoming-preview">
+          <PlanMiniMap planJson={incoming.plan} maxHeight={200} />
+        </div>
+        {matched ? (
+          <>
+            <p className="incoming-msg">
+              Attach <strong>{incoming.name}</strong> to <strong>{matched.name}</strong>
+              {matched.planJson ? ' (replaces the plan already on it)' : ''}?
+            </p>
+            <div className="dialog-actions">
+              <div className="spacer" />
+              <button onClick={onClose}>Cancel</button>
+              <button className="primary" onClick={() => onAttach(matched.id, incoming.plan)}>Attach</button>
+            </div>
+          </>
+        ) : listings.length === 0 ? (
+          <>
+            <p className="incoming-msg">Add a listing first, then send the plan again to attach it.</p>
+            <div className="dialog-actions">
+              <div className="spacer" />
+              <button className="primary" onClick={onClose}>OK</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="incoming-msg">Which listing is this floor plan for?</p>
+            <div className="incoming-pick">
+              {listings.map((l) => (
+                <button key={l.id} className="incoming-pick-row" onClick={() => onAttach(l.id, incoming.plan)}>
+                  <span>{l.name}</span>
+                  {!!l.planJson && <span className="incoming-has-plan">has a plan</span>}
+                </button>
+              ))}
+            </div>
+            <div className="dialog-actions">
+              <div className="spacer" />
+              <button onClick={onClose}>Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -482,8 +571,11 @@ function ListingDialog({
             <label>Floor plan (from Furnisher)</label>
             {draft.planJson ? (
               <div className="plan-attached">
-                ✓ Plan attached — the 🛋️ Fit button opens it in Furnisher with your furniture staged.
-                <button type="button" className="subtle danger" onClick={() => set('planJson', undefined)}>Remove</button>
+                <PlanMiniMap planJson={draft.planJson} maxHeight={180} />
+                <div className="plan-attached-foot">
+                  <span>✓ Plan attached — 🛋️ Fit opens it in Furnisher with your furniture staged.</span>
+                  <button type="button" className="subtle danger" onClick={() => set('planJson', undefined)}>Remove</button>
+                </div>
               </div>
             ) : (
               <PlanPaste onAttach={(plan) => set('planJson', plan)} />

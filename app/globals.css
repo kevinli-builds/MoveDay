@@ -204,10 +204,30 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 
 /* ── plan attach (Furnisher handoff) ────────────────────── */
 .plan-attached {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: 8px;
   padding: 9px 12px; border-radius: 8px; font-size: 13.5px;
   background: #edf4ef; border: 1px solid #cfe3d4; color: var(--good);
 }
+.plan-attached-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
 .plan-paste-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 .plan-paste-error { color: var(--bad); font-size: 12.5px; }
+
+/* ── Floor-plan mini-map (read-only SVG thumbnail) ─────────────── */
+.plan-mini {
+  display: block; border-radius: 8px; border: 1px solid var(--line);
+  background: #fffdf9; padding: 6px;
+}
+.incoming-preview {
+  display: flex; justify-content: center; margin-bottom: 12px;
+  background: #f4efe6; border-radius: 10px; padding: 10px;
+}
+.incoming-msg { font-size: 14px; margin: 0 0 12px; line-height: 1.5; }
+.incoming-pick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-height: 240px; overflow-y: auto; }
+.incoming-pick-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fdfcf9; font: inherit; text-align: left; cursor: pointer;
+}
+.incoming-pick-row:hover { border-color: var(--kraft-deep); background: #faf3e7; }
+.incoming-has-plan { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .field .plan-attached + button, .field div > textarea { width: 100%; }

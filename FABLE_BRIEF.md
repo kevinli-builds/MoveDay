@@ -45,8 +45,25 @@ OSRM is used for DRIVE only; **walk is always the straight-line estimate** (13 m
 straight-line (`rough` flag on CommuteEntry) when OSRM is down/times out (5 s). Transit
 stays manual + Google Maps deep link, per spec. 9 commute tests (34 total). Verified
 E2E live: Nominatim geocode, OSRM 4m drive + 16m rough walk GCT→ESB, board column.
-**Next → (build order)** — M4 mini plan renderer + `#plan=` return route
-(`myFurniture` manager already shipped); M5 extras (AI paste-parse first).
+**M4 COMPLETE — fit story closed (2026-07-18).** SVG mini plan renderer +
+`#plan=` return route. `lib/planGeometry.ts` `extractSafePlan()` is the MD1 trust
+boundary: coerces every coordinate to a finite, clamped number, sanitizes every
+colour through `safeColor`, caps element counts, drops degenerate polygons —
+returns null when nothing's drawable. `components/PlanMiniMap.tsx` draws the
+result read-only (rooms at 0.18 opacity, furniture at 0.55, swing doors solid /
+windows dashed) in the listing editor AND the incoming-plan dialog. The `#plan=`
+inbound handler on mount unpacks a Furnisher return trip: matches `listingId`
+straight to a listing, else shows a picker; clears the hash so refresh doesn't
+re-prompt. **Furnisher side (its repo, same day):** `buildMovedayUrl` +
+`MOVEDAY_LISTING_KEY` in `lib/share.ts`; the import effect stashes a MoveDay
+Fit-check's `listingId`; StatsPanel gets a 📦 "Send to MoveDay" button that
+re-attaches the arranged plan. 11 MoveDay geometry tests (56 total) + 2 Furnisher
+tests (102 total). **Verified E2E in-browser both halves:** Furnisher 📦 →
+`move-day.vercel.app/#plan=` with the plan (3 rooms/14 furniture/5 doors) +
+threaded listingId decoded cleanly; MoveDay inbound → mini-map preview → attach →
+persisted, Fit button appears.
+**Next → (build order)** — M5 extras: (a) AI paste-parse (listing text → BYO-key
+Claude → form), (b) hunt retrospective card, (c) tour-day print CSS.
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 
