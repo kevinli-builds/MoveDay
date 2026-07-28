@@ -11,6 +11,7 @@ import { supabaseEnabled } from './lib/supabase'
 import { signInWithGoogle, signOut, useAuth } from './lib/auth'
 import { pullHunt, pushHunt } from './lib/cloud'
 import { hasApiKey, parseListingText, setApiKey, type ParsedListing } from './lib/anthropic'
+import { computeRecap } from './lib/recap'
 import { composeFitCheckPlan, furnisherImportUrl, unpackHandoff } from './lib/handoff'
 import { FURN_COLORS, FURN_TYPES } from './lib/furnitureTypes'
 import { safeUrl } from './lib/sanitize'
@@ -52,6 +53,7 @@ export default function Home() {
   const [editing, setEditing] = useState<Listing | 'new' | null>(null)
   const [furnOpen, setFurnOpen] = useState(false)
   const [anchorsOpen, setAnchorsOpen] = useState(false)
+  const [recapOpen, setRecapOpen] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('createdAt')
   const [sortAsc, setSortAsc] = useState(true)
   const importRef = useRef<HTMLInputElement>(null)
@@ -264,6 +266,9 @@ export default function Home() {
         <button onClick={() => setAnchorsOpen(true)}>
           📍 Anchors{hunt.anchors.length > 0 ? ` (${hunt.anchors.length})` : ''}
         </button>
+        {hunt.listings.length > 0 && (
+          <button onClick={() => setRecapOpen(true)} title="Your hunt, wrapped">📊 Recap</button>
+        )}
         <div className="spacer" />
         <button className="subtle" onClick={exportHunt} title="Download this hunt as a JSON backup">Export</button>
         <button className="subtle" onClick={() => importRef.current?.click()} title="Restore a hunt from a JSON backup">Import</button>
@@ -397,6 +402,8 @@ export default function Home() {
           onClose={() => setAnchorsOpen(false)}
         />
       )}
+
+      {recapOpen && <RecapDialog hunt={hunt} onClose={() => setRecapOpen(false)} />}
 
       {incomingPlan && (
         <IncomingPlanDialog
@@ -547,6 +554,61 @@ function AiAutofill({ onFill }: { onFill: (p: ParsedListing) => void }) {
         )}
       </div>
     </details>
+  )
+}
+
+// ── Hunt recap — "wrapped" card (FABLE_BRIEF §5 M5b) ────────────────
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+function RecapStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="recap-stat">
+      <span className="recap-stat-label">{label}</span>
+      <span className="recap-stat-value">{value}</span>
+    </div>
+  )
+}
+
+function RecapDialog({ hunt, onClose }: { hunt: Hunt; onClose: () => void }) {
+  const r = useMemo(() => computeRecap(hunt), [hunt])
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog recap" onClick={(e) => e.stopPropagation()}>
+        <h2>📦 Your hunt, wrapped</h2>
+        <div className="recap-headline">
+          {r.signed ? (
+            <>
+              <span className="recap-big">🎉 You signed {r.signed.name}</span>
+              <span className="recap-sub">
+                the {ordinal(r.signed.ordinalSeen)} place you saw
+                {r.signed.daysHunting != null && ` · ${r.signed.daysHunting} day${r.signed.daysHunting === 1 ? '' : 's'} of hunting`}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="recap-big">{r.toured} toured · {r.saved} saved</span>
+              <span className="recap-sub">Still hunting — no lease signed yet. Keep going!</span>
+            </>
+          )}
+        </div>
+        <div className="recap-stats">
+          <RecapStat label="Listings saved" value={String(r.saved)} />
+          <RecapStat label="Toured" value={String(r.toured)} />
+          {r.topRated && <RecapStat label="Top gut pick" value={`${r.topRated.name} · ${'★'.repeat(r.topRated.value)}`} />}
+          {r.cheapest && <RecapStat label="Cheapest" value={`${r.cheapest.name} · $${r.cheapest.value.toLocaleString()}/mo`} />}
+          {r.bestValue && <RecapStat label="Best $/sqft" value={`${r.bestValue.name} · $${r.bestValue.value.toFixed(2)}`} />}
+          {r.avgRentToured != null && <RecapStat label="Avg rent (toured)" value={`$${r.avgRentToured.toLocaleString()}/mo`} />}
+        </div>
+        <div className="dialog-actions">
+          <div className="spacer" />
+          <button className="primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
