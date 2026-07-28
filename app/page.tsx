@@ -270,6 +270,9 @@ export default function Home() {
           <button onClick={() => setRecapOpen(true)} title="Your hunt, wrapped">📊 Recap</button>
         )}
         <div className="spacer" />
+        {hunt.listings.length > 0 && (
+          <button className="subtle" onClick={() => window.print()} title="Print a fill-in sheet for tour day">🖨 Tour sheet</button>
+        )}
         <button className="subtle" onClick={exportHunt} title="Download this hunt as a JSON backup">Export</button>
         <button className="subtle" onClick={() => importRef.current?.click()} title="Restore a hunt from a JSON backup">Import</button>
         <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={onImportFile} />
@@ -413,6 +416,8 @@ export default function Home() {
           onClose={() => setIncomingPlan(null)}
         />
       )}
+
+      <TourSheet hunt={hunt} />
     </main>
   )
 }
@@ -609,6 +614,53 @@ function RecapDialog({ hunt, onClose }: { hunt: Hunt; onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Tour-day sheet (FABLE_BRIEF §5 M5c) ────────────────────────────
+// Print-only: hidden on screen, revealed by @media print (the 🖨 button calls
+// window.print()). One fill-in card per active candidate — the facts you have,
+// plus blanks for the gut check you'll only know once you're standing in it.
+function TourSheet({ hunt }: { hunt: Hunt }) {
+  const anchor0 = hunt.anchors[0]
+  const cards = hunt.listings.filter((l) => l.status !== 'rejected' && l.status !== 'signed')
+  if (cards.length === 0) return null
+  return (
+    <section className="tour-sheet" aria-hidden="true">
+      <div className="tour-sheet-head">📦 MoveDay tour sheet — {hunt.name}</div>
+      {cards.map((l) => {
+        const psf = dollarsPerSqft(l)
+        const c = anchor0 ? l.commutes.find((x) => x.anchorId === anchor0.id) : undefined
+        return (
+          <div className="tour-card" key={l.id}>
+            <div className="tour-card-head">
+              <span className="tour-card-name">{l.name}</span>
+              <span className="tour-card-rent">{l.rentMonthly != null ? `$${l.rentMonthly.toLocaleString()}/mo` : ''}</span>
+            </div>
+            {l.address && <div className="tour-card-addr">{l.address}</div>}
+            <div className="tour-card-facts">
+              <span>Sqft: {l.sqft ?? '—'}</span>
+              <span>$/sqft: {psf != null ? `$${psf.toFixed(2)}` : '—'}</span>
+              <span>Beds: {l.beds ?? '—'}</span>
+              <span>Baths: {l.baths ?? '—'}</span>
+              <span>Avail: {l.availableFrom ?? '—'}</span>
+              {anchor0 && <span>→ {anchor0.name}: {c?.driveMin != null ? `~${c.driveMin}m` : '—'}</span>}
+            </div>
+            <div className="tour-capture">
+              <div className="tour-line"><span className="tour-lbl">Gut</span><span className="tour-stars">☆ ☆ ☆ ☆ ☆</span></div>
+              <div className="tour-line"><span className="tour-lbl">Three words</span><span className="tour-blank" /></div>
+              {hunt.dealbreakerDefs.length > 0 && (
+                <div className="tour-line">
+                  <span className="tour-lbl">Check</span>
+                  <span className="tour-dbs">{hunt.dealbreakerDefs.map((d) => <span key={d.id} className="tour-db">☐ {d.label}</span>)}</span>
+                </div>
+              )}
+              <div className="tour-notes"><span className="tour-lbl">Notes</span></div>
+            </div>
+          </div>
+        )
+      })}
+    </section>
   )
 }
 

@@ -150,6 +150,35 @@ table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 .recap-stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .recap-stat-value { font-size: 14px; color: var(--ink); text-align: right; }
 
+/* Tour-day sheet (M5c) — hidden on screen, laid out for paper in print. */
+.tour-sheet { display: none; }
+@media print {
+  /* Hide the interactive app; show only the sheet. */
+  .masthead, .tagline, .toolbar, .board-wrap, .empty, .footnote, .overlay { display: none !important; }
+  body { background: #fff; color: #000; }
+  .shell { max-width: none; margin: 0; padding: 0; }
+  .tour-sheet { display: block; }
+  .tour-sheet-head { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .tour-card {
+    break-inside: avoid; page-break-inside: avoid;
+    border: 1px solid #000; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+  }
+  .tour-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .tour-card-name { font-size: 15px; font-weight: 700; }
+  .tour-card-rent { font-size: 14px; font-weight: 700; }
+  .tour-card-addr { font-size: 12px; color: #333; margin-top: 1px; }
+  .tour-card-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin: 6px 0 8px; }
+  .tour-capture { border-top: 1px dashed #999; padding-top: 8px; display: flex; flex-direction: column; gap: 9px; }
+  .tour-line { display: flex; align-items: flex-end; gap: 8px; }
+  .tour-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; min-width: 78px; }
+  .tour-stars { font-size: 16px; letter-spacing: 3px; }
+  .tour-blank { flex: 1; border-bottom: 1px solid #000; height: 14px; }
+  .tour-dbs { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; }
+  .tour-notes { border-bottom: 1px solid #000; height: 14px; }
+  .tour-notes .tour-lbl { display: block; margin-bottom: 18px; }
+  @page { margin: 1.5cm; }
+}
+
 .rate-row { display: flex; gap: 4px; }
 .rate-row button { padding: 4px 8px; font-size: 18px; line-height: 1; border-radius: 6px; }
 .rate-row button.on { border-color: var(--kraft-deep); background: #faf3e7; }
