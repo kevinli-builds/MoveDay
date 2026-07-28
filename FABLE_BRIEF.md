@@ -62,6 +62,24 @@ tests (102 total). **Verified E2E in-browser both halves:** Furnisher 📦 →
 `move-day.vercel.app/#plan=` with the plan (3 rooms/14 furniture/5 doors) +
 threaded listingId decoded cleanly; MoveDay inbound → mini-map preview → attach →
 persisted, Fit button appears.
+**M6 — optional cloud sync SHIPPED (2026-07-28).** The §6 "Phase 2 on real demand"
+item, built now that the shared backend is consolidated ("Central DB",
+`tmycdgnofvmbyrmpqohw`). One JSONB hunt row per user in `public.moveday_hunts`
+(migration `supabase/01-moveday-hunts.sql`, own-row RLS, wrong-project guard),
+last-write-wins, anon key only. Client seams adapted from Furnisher:
+`lib/supabase.ts` (optional client — unset env = fully local, button hidden),
+`lib/auth.ts` (Google OAuth), `lib/cloud.ts` (`pullHunt`/`pushHunt`). page.tsx:
+`useAuth`, "☁ Sign in to sync" toolbar chip w/ sync-status dot, debounced push on
+change, **non-destructive sign-in merge** (auto-adopts whichever side has content;
+prompts only when BOTH device + account are non-empty). Cloud data re-enters
+through `normalizeHunt` (trust boundary). **NOTE the §6 brief floated a dedicated
+`moveday` schema; used a prefixed `public` table instead — MoveDay is a client-side
+anon-key app (PostgREST), so a custom schema would need project-wide API exposure.
+Same isolation via RLS + naming; see the SQL header.** **Photos NOT synced**
+(IndexedDB stays device-local). Typecheck + 45 tests + build green; sign-in chip
+verified in-browser. **Kevin-side to finish:** add `http://localhost:3006/**` +
+`https://move-day.vercel.app/**` to Central DB Redirect URLs; set the two env vars
+in Vercel prod; then hands-on OAuth round-trip (auth can't be driven headlessly).
 **Next → (build order)** — M5 extras: (a) AI paste-parse (listing text → BYO-key
 Claude → form), (b) hunt retrospective card, (c) tour-day print CSS.
 **House rules** — local-first, no accounts, no backend in MVP; label every
@@ -282,10 +300,13 @@ the share-link "Copy plan JSON" fallback, paste into MoveDay.
   off-white ground) — visibly a sibling of Furnisher's earthy scheme, not a clone.
 - Dev port **3006** (3002 Furnisher, 3005 PersonalAssist, 3010 EnergyMap).
 - No backend, no env vars, no secrets in MVP. Deploy = Vercel static.
-- **Phase 2 (only on real demand):** cross-device sync / partner sharing via
-  Supabase on **Furnisher's existing project in a dedicated `moveday` Postgres
-  schema** — the PersonalAssist precedent (free tier caps projects at 2; both
-  slots are taken). RLS own-rows, anon key only.
+- **Phase 2 — cross-device sync SHIPPED 2026-07-28 (M6, see ledger §0).** On the
+  shared "Central DB" project (`tmycdgnofvmbyrmpqohw`), RLS own-rows, anon key only.
+  Implemented as a prefixed `public.moveday_hunts` table rather than a dedicated
+  `moveday` schema — MoveDay is a client-side anon-key/PostgREST app (unlike
+  PersonalAssist, which reaches its own schema via Prisma), so a custom schema
+  would need project-wide API exposure for no extra isolation. Partner *sharing*
+  is still unbuilt (sync is one-hunt-per-user; sharing = a later increment).
 - Tests: vitest on the pure seams — `normalizeHunt`, handoff encode/decode
   round-trip, commute fallback math, `$/sqft` derivations. Same trust-boundary
   test style as Furnisher's `storage.test.ts`.

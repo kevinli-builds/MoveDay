@@ -50,6 +50,13 @@ button.subtle { border: none; background: none; color: var(--muted); padding: 4p
 button.subtle:hover { color: var(--ink); }
 button.danger { color: var(--bad); }
 
+/* Cloud-sync account chip (only rendered when Supabase is configured). */
+.account { display: inline-flex; align-items: center; gap: 4px; }
+.sync-dot { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.sync-dot.saved { color: var(--good); }
+.sync-dot.syncing { color: var(--tape); }
+.sync-dot.error { color: var(--bad); }
+
 .board-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 table.board { border-collapse: collapse; width: 100%; min-width: 880px; }
 .board th, .board td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }

@@ -20,11 +20,20 @@ fits. The #1 "build" verdict in `~/PROJECT_IDEAS.md`.
   Furnisher's stack; conventions transfer.
 - Hand-written CSS in `app/globals.css` — kraft-cardboard palette (box tan
   `#c9a87c`, packing-tape blue `#3d6b9e`).
-- **Local-first, no backend, no secrets**: Hunt in `localStorage['moveday.hunt.v1']`,
-  photos in IndexedDB (`idb-keyval`, M1 remaining). `lz-string` for URL-fragment
-  handoffs.
-- Every loaded/imported hunt passes through `normalizeHunt()` (`app/lib/storage.ts`)
-  — the trust boundary. Colors → `safeColor`, links → `safeUrl` (`app/lib/sanitize.ts`).
+- **Local-first**: Hunt in `localStorage['moveday.hunt.v1']`, photos in IndexedDB
+  (`idb-keyval`). `lz-string` for URL-fragment handoffs. The app runs fully local
+  with no account.
+- **Optional cloud sync** (M6, added 2026-07-28): when the two `NEXT_PUBLIC_SUPABASE_*`
+  env vars are set, a "☁ Sign in to sync" button appears (Google OAuth). The whole
+  hunt is one JSONB row per user in `public.moveday_hunts` on the shared **Central DB**
+  project (ref `tmycdgnofvmbyrmpqohw`; migration `supabase/01-moveday-hunts.sql`),
+  last-write-wins, own-row RLS. **Photos are NOT synced** (they stay in IndexedDB —
+  a synced hunt's photoIds only resolve on the device holding the blobs).
+  Client seams: `app/lib/supabase.ts` / `auth.ts` / `cloud.ts` (adapted from
+  Furnisher). Anon key only — safe in the browser; never ship service_role.
+- Every loaded/imported/**pulled** hunt passes through `normalizeHunt()`
+  (`app/lib/storage.ts`) — the trust boundary. Cloud data is untrusted like an
+  import. Colors → `safeColor`, links → `safeUrl` (`app/lib/sanitize.ts`).
 
 ## Run / dev
 ```
@@ -56,10 +65,12 @@ app/
 - **Never scrape listing sites** (FABLE_BRIEF §9) — paste-first forever.
 - Geometry in the handoff payloads is Furnisher's Plan shape, centimetres.
 
-## Status (2026-07-11)
-M1 skeleton built (board, listing CRUD, tour capture, persistence, tests).
-Not yet: photos (IndexedDB), export bundle, Furnisher-side `#import=` (M2),
-commutes (M3), mini plan renderer + furniture manager (M4).
+## Status (2026-07-28)
+M1 board, photos (IndexedDB), export/import bundle, commutes, mini plan renderer +
+furniture manager all shipped. **M6 optional cloud sync added 2026-07-28** (see Stack).
+Sync needs one Kevin-side dashboard step: add MoveDay's origins to Central DB →
+Auth → URL Configuration → Redirect URLs (`http://localhost:3006/**` +
+`https://move-day.vercel.app/**`), and set the two env vars in Vercel for prod.
 
 ## Git / deploy
 - **GitHub**: https://github.com/kevinli-builds/MoveDay (branch `main`)

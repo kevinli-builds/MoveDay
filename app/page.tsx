@@ -6,7 +6,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Anchor, CommuteEntry, FurnTemplate, Hunt, Listing, ListingStatus } from './lib/types'
 import { LISTING_STATUSES, dollarsPerSqft } from './lib/types'
-import { defaultHunt, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
+import { defaultHunt, huntIsEmpty, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
+import { supabaseEnabled } from './lib/supabase'
+import { signInWithGoogle, signOut, useAuth } from './lib/auth'
+import { pullHunt, pushHunt } from './lib/cloud'
 import { composeFitCheckPlan, furnisherImportUrl, unpackHandoff } from './lib/handoff'
 import { FURN_COLORS, FURN_TYPES } from './lib/furnitureTypes'
 import { safeUrl } from './lib/sanitize'
@@ -54,6 +57,15 @@ export default function Home() {
   // A plan arriving back from Furnisher via #plan= (M4 return trip).
   const [incomingPlan, setIncomingPlan] = useState<{ name: string; plan: Record<string, unknown>; listingId?: string } | null>(null)
 
+  // Optional cloud sync (only when Supabase env is configured — local-first stays
+  // the default). One hunt document per user; last-write-wins; photos stay local.
+  const { user, ready: authReady } = useAuth()
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle')
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Set right after we adopt a pulled hunt, so the save effect doesn't immediately
+  // echo it back up as a redundant push.
+  const skipNextPush = useRef(false)
+
   // Load after mount (avoids SSR/hydration mismatch — Furnisher pattern).
   useEffect(() => {
     const h = loadHunt()
@@ -78,9 +90,67 @@ export default function Home() {
     if (target) upsertListing({ ...target, planJson: plan })
     setIncomingPlan(null)
   }
+  // Persist every change to localStorage (always) and, when signed in, debounce
+  // a push to the cloud. localStorage remains the source of truth on-device.
   useEffect(() => {
-    if (loaded) saveHunt(hunt)
-  }, [hunt, loaded])
+    if (!loaded) return
+    saveHunt(hunt)
+    if (!supabaseEnabled || !user) return
+    if (skipNextPush.current) {
+      skipNextPush.current = false
+      return
+    }
+    setSyncStatus('syncing')
+    if (pushTimer.current) clearTimeout(pushTimer.current)
+    pushTimer.current = setTimeout(() => {
+      pushHunt(hunt)
+        .then(() => setSyncStatus('saved'))
+        .catch((e) => { console.error('[moveday] cloud push failed', e); setSyncStatus('error') })
+    }, 800)
+  }, [hunt, loaded, user])
+
+  // On sign-in, reconcile this device's hunt with the account's. Auto-resolves
+  // when only one side has content; prompts only when both do (never silently
+  // discards data). Runs once per sign-in.
+  useEffect(() => {
+    if (!supabaseEnabled || !user || !loaded) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const cloud = await pullHunt()
+        if (cancelled) return
+        if (!cloud) {
+          await pushHunt(hunt) // first sync from this account → adopt local
+          setSyncStatus('saved')
+          return
+        }
+        const localEmpty = huntIsEmpty(hunt)
+        const cloudEmpty = huntIsEmpty(cloud.data)
+        if (!localEmpty && !cloudEmpty) {
+          const useCloud = window.confirm(
+            `This device has ${hunt.listings.length} listing(s); your account has ${cloud.data.listings.length}. ` +
+            `\n\nOK = load your account's hunt (replaces what's on this device).` +
+            `\nCancel = keep this device and overwrite your account.`,
+          )
+          if (useCloud) { skipNextPush.current = true; update(() => cloud.data) }
+          else { await pushHunt(hunt); setSyncStatus('saved') }
+        } else if (!cloudEmpty) {
+          skipNextPush.current = true
+          update(() => cloud.data) // only the cloud has content → adopt it
+        } else if (!localEmpty) {
+          await pushHunt(hunt) // only this device has content → save it up
+          setSyncStatus('saved')
+        }
+      } catch (e) {
+        console.error('[moveday] cloud pull failed', e)
+        setSyncStatus('error')
+      }
+    })()
+    return () => { cancelled = true }
+    // Intentionally only re-run when the signed-in user changes (merge is a
+    // sign-in-moment action) — hunt is read at call time, not tracked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loaded])
 
   const update = (fn: (h: Hunt) => Hunt) => setHunt((h) => normalizeHunt(fn(h)))
 
@@ -197,6 +267,27 @@ export default function Home() {
         <button className="subtle" onClick={exportHunt} title="Download this hunt as a JSON backup">Export</button>
         <button className="subtle" onClick={() => importRef.current?.click()} title="Restore a hunt from a JSON backup">Import</button>
         <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={onImportFile} />
+        {supabaseEnabled && authReady && (
+          user ? (
+            <span className="account">
+              <span
+                className={'sync-dot ' + syncStatus}
+                title={
+                  syncStatus === 'error' ? 'Cloud sync failed — your hunt is still saved on this device'
+                  : syncStatus === 'syncing' ? 'Saving to your account…'
+                  : 'Synced to your account'
+                }
+              >
+                {syncStatus === 'error' ? '⚠ Sync error' : syncStatus === 'syncing' ? '☁ Saving…' : '☁ Synced'}
+              </span>
+              <button className="subtle" onClick={() => void signOut()} title={user.email ?? undefined}>Sign out</button>
+            </span>
+          ) : (
+            <button className="subtle" onClick={() => void signInWithGoogle()} title="Sync your hunt across devices">
+              ☁ Sign in to sync
+            </button>
+          )
+        )}
       </div>
 
       {sorted.length === 0 ? (
@@ -273,8 +364,10 @@ export default function Home() {
       )}
 
       <p className="footnote">
-        Everything stays on this device (localStorage + IndexedDB for photos); Export bundles it
-        all into one file. Commute estimates are estimates — geocoding © OpenStreetMap
+        {user
+          ? 'Your hunt syncs to your account (photos stay on this device); Export bundles it all into one file.'
+          : 'Everything stays on this device (localStorage + IndexedDB for photos); Export bundles it all into one file.'}
+        {' '}Commute estimates are estimates — geocoding © OpenStreetMap
         contributors, routing by the OSRM demo server.
       </p>
 

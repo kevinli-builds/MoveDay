@@ -177,3 +177,10 @@ export function saveHunt(hunt: Hunt): void {
     /* quota / private mode — ignore */
   }
 }
+
+// "Nothing worth keeping yet" — used by cloud sync to auto-resolve the
+// sign-in merge when only one side has real content (name/dealbreaker defaults
+// don't count). Both-non-empty is the only case that prompts the user.
+export function huntIsEmpty(h: Hunt): boolean {
+  return h.listings.length === 0 && h.myFurniture.length === 0 && h.anchors.length === 0
+}
