@@ -67,7 +67,11 @@ app/
 
 ## Status (2026-07-28)
 M1 board, photos (IndexedDB), export/import bundle, commutes, mini plan renderer +
-furniture manager all shipped. **M6 optional cloud sync added 2026-07-28** (see Stack).
+furniture manager all shipped. **M6 optional cloud sync** (see Stack). **M5 delight
+shipped 2026-07-28**: (a) AI paste-parse (`lib/anthropic.ts` — BYO Anthropic key,
+claude-haiku-4-5, "✨ Autofill from pasted text" in the listing dialog), (b) hunt
+recap (`lib/recap.ts` pure + tested; 📊 Recap dialog), (c) tour-day print sheet
+(print-only `TourSheet` + `@media print`; 🖨 button). M1–M6 all shipped; 50 tests.
 Sync needs one Kevin-side dashboard step: add MoveDay's origins to Central DB →
 Auth → URL Configuration → Redirect URLs (`http://localhost:3006/**` +
 `https://move-day.vercel.app/**`), and set the two env vars in Vercel for prod.

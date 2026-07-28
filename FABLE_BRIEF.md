@@ -80,8 +80,24 @@ Same isolation via RLS + naming; see the SQL header.** **Photos NOT synced**
 verified in-browser. **Kevin-side to finish:** add `http://localhost:3006/**` +
 `https://move-day.vercel.app/**` to Central DB Redirect URLs; set the two env vars
 in Vercel prod; then hands-on OAuth round-trip (auth can't be driven headlessly).
-**Next → (build order)** — M5 extras: (a) AI paste-parse (listing text → BYO-key
-Claude → form), (b) hunt retrospective card, (c) tour-day print CSS.
+**M5 — delight & leverage SHIPPED (2026-07-28), all three:** **(a) AI paste-parse**
+— `lib/anthropic.ts` (BYO Anthropic key in localStorage, sent browser→Anthropic with
+the dangerous-direct-browser-access header, `claude-haiku-4-5`; mirrors Furnisher's
+pattern). A collapsible "✨ Autofill from pasted text" atop the listing dialog: paste
+a Craigslist/Zillow/email blurb → extracts name/address/url/rent/sqft/beds/baths/
+availableFrom, type-coerced + `safeUrl`'d, then re-normalized on save. No scraping (§9).
+**(b) hunt recap** — pure `computeRecap` (`lib/recap.ts`, 5 tests): the 📊 Recap
+dialog ("🎉 You signed X — the Nth place you saw · D days hunting", + top gut pick /
+cheapest / best $/sqft / avg toured rent). **(c) tour-day sheet** — print-only
+`TourSheet` + `@media print`: 🖨 button prints one fill-in card per active candidate
+(facts you have + blank gut stars / three-words / dealbreaker checkboxes / notes).
+Typecheck + 50 tests + build green; (b)/(c) verified in-browser with seeded hunts;
+(a) UI verified (both key + textarea branches) — the live Claude call is Kevin's
+hands-on check (needs his key). **Actual Anthropic extraction unverified E2E** (no key
+in-session).
+**Next →** — M5b/c polish ideas if wanted: share/export the recap as an image; a
+"tour mode" that opens the sheet filtered to a chosen day. Otherwise the build order
+is complete (M1–M6 shipped); partner *sharing* on cloud sync is the main open feature.
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 
