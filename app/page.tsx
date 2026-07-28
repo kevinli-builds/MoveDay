@@ -10,6 +10,7 @@ import { defaultHunt, huntIsEmpty, loadHunt, normalizeHunt, saveHunt } from './l
 import { supabaseEnabled } from './lib/supabase'
 import { signInWithGoogle, signOut, useAuth } from './lib/auth'
 import { pullHunt, pushHunt } from './lib/cloud'
+import { hasApiKey, parseListingText, setApiKey, type ParsedListing } from './lib/anthropic'
 import { composeFitCheckPlan, furnisherImportUrl, unpackHandoff } from './lib/handoff'
 import { FURN_COLORS, FURN_TYPES } from './lib/furnitureTypes'
 import { safeUrl } from './lib/sanitize'
@@ -470,6 +471,85 @@ function IncomingPlanDialog({
   )
 }
 
+// ── AI paste-parse (FABLE_BRIEF §5 M5a) ────────────────────────────
+// Paste raw listing text → Claude fills the fields below. BYO Anthropic key,
+// stored only in localStorage and sent straight to Anthropic from the browser.
+function AiAutofill({ onFill }: { onFill: (p: ParsedListing) => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [filledCount, setFilledCount] = useState<number | null>(null)
+  const [hasKey, setHasKey] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+
+  useEffect(() => { setHasKey(hasApiKey()) }, [])
+
+  const saveKey = () => {
+    if (!keyInput.trim()) return
+    setApiKey(keyInput)
+    setKeyInput('')
+    setHasKey(true)
+  }
+
+  const run = async () => {
+    if (!text.trim() || busy) return
+    setBusy(true); setError(''); setFilledCount(null)
+    try {
+      const parsed = await parseListingText(text)
+      onFill(parsed)
+      setFilledCount(Object.keys(parsed).length)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Extraction failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <details className="ai-autofill">
+      <summary>✨ Autofill from pasted text</summary>
+      <div className="ai-autofill-body">
+        {!hasKey ? (
+          <div className="ai-key">
+            <p className="ai-note">
+              Uses your own Anthropic API key to read a pasted listing and fill in the fields.
+              The key is stored only in this browser and sent directly to Anthropic — never to a MoveDay server.
+            </p>
+            <div className="ai-key-row">
+              <input
+                type="password"
+                value={keyInput}
+                placeholder="sk-ant-…"
+                onChange={(e) => setKeyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveKey() }}
+              />
+              <button type="button" onClick={saveKey} disabled={!keyInput.trim()}>Save key</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <textarea
+              rows={4}
+              value={text}
+              placeholder="Paste the listing (Craigslist post, Zillow blurb, a landlord's email…) and I'll fill in rent, sqft, beds, address, and more below."
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="ai-autofill-actions">
+              <button type="button" className="primary" onClick={() => void run()} disabled={busy || !text.trim()}>
+                {busy ? 'Reading…' : '✨ Autofill'}
+              </button>
+              {filledCount !== null && !error && (
+                <span className="ai-msg ok">{filledCount > 0 ? `Filled ${filledCount} field${filledCount === 1 ? '' : 's'} — review below.` : 'Nothing found to fill.'}</span>
+              )}
+              {error && <span className="ai-msg err">{error}</span>}
+            </div>
+          </>
+        )}
+      </div>
+    </details>
+  )
+}
+
 // ── Add / edit dialog (includes post-tour capture) ─────────────────
 
 function ListingDialog({
@@ -493,6 +573,9 @@ function ListingDialog({
   )
   const set = <K extends keyof Listing>(k: K, v: Listing[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const numField = (v: string) => (v.trim() === '' ? undefined : Number(v))
+  // Merge AI-extracted fields over the draft. ParsedListing only carries keys the
+  // model actually found, so spreading never clobbers a field with undefined.
+  const applyParsed = (p: ParsedListing) => setDraft((d) => ({ ...d, ...p }))
 
   // ── Photos. Blobs live in IndexedDB; the dialog only holds object URLs.
   // Deletion is deferred so Cancel is safe: photos added this session are
@@ -564,6 +647,7 @@ function ListingDialog({
     <div className="overlay" onClick={cancelWithPhotoCleanup}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
         <h2>{listing ? 'Edit listing' : 'Add listing'}</h2>
+        <AiAutofill onFill={applyParsed} />
         <div className="grid2">
           <div className="field full">
             <label>Name</label>
