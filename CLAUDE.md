@@ -31,6 +31,16 @@ fits. The #1 "build" verdict in `~/PROJECT_IDEAS.md`.
   a synced hunt's photoIds only resolve on the device holding the blobs).
   Client seams: `app/lib/supabase.ts` / `auth.ts` / `cloud.ts` (adapted from
   Furnisher). Anon key only — safe in the browser; never ship service_role.
+- **Partner sharing** (M7, added 2026-07-28; migration `supabase/02-partner-sharing.sql`):
+  an owner shares a link (`?join=<token>`); a partner signs in, joins, and both
+  read+write the same hunt. `moveday_hunt_members` + owner-OR-member RLS +
+  `join_moveday_hunt`/`revoke_moveday_sharing`/`leave_moveday_hunt` + an owner-column
+  guard (Furnisher's model). UI: a masthead hunt-switcher (own + joined), a 👥 Share
+  dialog, `?join=` capture. **Concurrent edits merge at the listing level**
+  (`app/lib/merge.ts`, add-wins / my-edits-win / my-deletes-honored; a partner's
+  delete can resurrect until they re-sync — documented). Joined hunts are cloud-only
+  (localStorage still holds just my own hunt); active hunt + per-hunt synced-ids in
+  `localStorage['moveday.activeOwner' / 'moveday.synced.<owner>']`.
 - Every loaded/imported/**pulled** hunt passes through `normalizeHunt()`
   (`app/lib/storage.ts`) — the trust boundary. Cloud data is untrusted like an
   import. Colors → `safeColor`, links → `safeUrl` (`app/lib/sanitize.ts`).
@@ -71,10 +81,14 @@ furniture manager all shipped. **M6 optional cloud sync** (see Stack). **M5 deli
 shipped 2026-07-28**: (a) AI paste-parse (`lib/anthropic.ts` — BYO Anthropic key,
 claude-haiku-4-5, "✨ Autofill from pasted text" in the listing dialog), (b) hunt
 recap (`lib/recap.ts` pure + tested; 📊 Recap dialog), (c) tour-day print sheet
-(print-only `TourSheet` + `@media print`; 🖨 button). M1–M6 all shipped; 50 tests.
-Sync needs one Kevin-side dashboard step: add MoveDay's origins to Central DB →
-Auth → URL Configuration → Redirect URLs (`http://localhost:3006/**` +
-`https://move-day.vercel.app/**`), and set the two env vars in Vercel for prod.
+(print-only `TourSheet` + `@media print`; 🖨 button). **M7 partner sharing shipped
+2026-07-28** (see Stack; 55 tests). M1–M7 all shipped.
+Sync needed one Kevin-side dashboard step (done for M6): MoveDay's origins in Central
+DB → Auth → Redirect URLs (`http://localhost:3006/**` + `https://move-day.vercel.app/**`)
++ the two env vars in Vercel prod. **M7 needs migration `02-partner-sharing.sql` run on
+Central DB BEFORE the M7 commit is pushed/deployed** — `listHunts` reads the new
+`share_token` column (it degrades to own-hunt-only sync if 02 is absent, but sharing
+stays dark until 02 runs).
 
 ## Git / deploy
 - **GitHub**: https://github.com/kevinli-builds/MoveDay (branch `main`)

@@ -95,9 +95,24 @@ Typecheck + 50 tests + build green; (b)/(c) verified in-browser with seeded hunt
 (a) UI verified (both key + textarea branches) — the live Claude call is Kevin's
 hands-on check (needs his key). **Actual Anthropic extraction unverified E2E** (no key
 in-session).
-**Next →** — M5b/c polish ideas if wanted: share/export the recap as an image; a
-"tour mode" that opens the sheet filtered to a chosen day. Otherwise the build order
-is complete (M1–M6 shipped); partner *sharing* on cloud sync is the main open feature.
+**M7 — partner sharing SHIPPED (2026-07-28).** Two people collaborate on one hunt.
+Migration `supabase/02-partner-sharing.sql`: `share_token` on moveday_hunts +
+`moveday_hunt_members` + owner-OR-member RLS + `join_moveday_hunt` /
+`revoke_moveday_sharing` / `leave_moveday_hunt` + owner-column guard (Furnisher's
+model). `lib/cloud.ts` reworked for multi-hunt (`listHunts`/`pullHunt(owner)`/
+`pushOwnHunt`/`pushHuntMerged` + share ops); `lib/merge.ts` (5 tests) does
+listing-level merge (add-wins / my-edits-win / my-deletes-honored; partner-delete can
+resurrect until they re-sync — documented). page.tsx: masthead hunt-switcher, 👥 Share
+dialog (create/copy link, member count, stop sharing, leave), `?join=` capture +
+signed-out invite banner; joined hunts are cloud-only (localStorage holds only my own).
+Typecheck + 55 tests + build green; signed-out + `?join=` flow verified in-browser.
+**Two-user sharing flow is UNVERIFIED E2E** (needs migration 02 applied + two accounts
+— Kevin's hands-on check). **Deploy order: run migration 02 on Central DB BEFORE
+pushing the M7 commit** (auto-deploys); `listHunts` degrades to own-hunt-only if 02 is
+absent, so basic sync survives either way.
+**Next →** — no planned features left (M1–M7 shipped). Ideas if wanted: real-time
+collab (Supabase Realtime, replacing the async merge); per-listing timestamps so
+partner deletes propagate cleanly; share/export the recap as an image.
 **House rules** — local-first, no accounts, no backend in MVP; label every
 estimate; never scrape listing sites (§9); commit + push per portfolio convention.
 
