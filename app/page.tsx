@@ -9,7 +9,10 @@ import { LISTING_STATUSES, dollarsPerSqft } from './lib/types'
 import { defaultHunt, huntIsEmpty, loadHunt, normalizeHunt, saveHunt } from './lib/storage'
 import { supabaseEnabled } from './lib/supabase'
 import { signInWithGoogle, signOut, useAuth } from './lib/auth'
-import { pullHunt, pushHunt } from './lib/cloud'
+import {
+  disableSharing, enableSharing, getMemberCount, getMyShareToken, joinByToken, leaveHunt,
+  listHunts, pullHunt, pushHuntMerged, pushOwnHunt, type HuntSummary,
+} from './lib/cloud'
 import { hasApiKey, parseListingText, setApiKey, type ParsedListing } from './lib/anthropic'
 import { computeRecap } from './lib/recap'
 import { composeFitCheckPlan, furnisherImportUrl, unpackHandoff } from './lib/handoff'
@@ -27,6 +30,22 @@ import {
   validateBundlePhotos,
 } from './lib/photos'
 import { driveMinutes, geocode, sleep, transitDeepLink, walkFallbackMinutes } from './lib/commute'
+
+// Which hunt is active across reloads, and the ids last synced per hunt (so the
+// merge can tell "I deleted it" from "partner added it"). Local-only bookkeeping.
+const ACTIVE_KEY = 'moveday.activeOwner'
+const KNOWN_PREFIX = 'moveday.synced.'
+function loadKnownIds(owner: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(KNOWN_PREFIX + owner) || '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function saveKnownIds(owner: string, ids: string[]): void {
+  try { localStorage.setItem(KNOWN_PREFIX + owner, JSON.stringify(ids)) } catch { /* ignore */ }
+}
 
 type SortKey = 'name' | 'status' | 'rentMonthly' | 'sqft' | 'psf' | 'rating' | 'commute' | 'createdAt'
 
@@ -61,13 +80,29 @@ export default function Home() {
   const [incomingPlan, setIncomingPlan] = useState<{ name: string; plan: Record<string, unknown>; listingId?: string } | null>(null)
 
   // Optional cloud sync (only when Supabase env is configured — local-first stays
-  // the default). One hunt document per user; last-write-wins; photos stay local.
+  // the default). One hunt per owner; partner sharing lets members read+write it.
   const { user, ready: authReady } = useAuth()
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'saved' | 'error'>('idle')
+  const [hunts, setHunts] = useState<HuntSummary[]>([]) // hunts I can access (own + joined)
+  const [activeOwner, setActiveOwner] = useState<string | null>(null) // which hunt I'm viewing
+  const [shareToken, setShareToken] = useState<string | null>(null) // my hunt's link token, if shared
+  const [memberCount, setMemberCount] = useState(0) // partners on my hunt
+  const [shareOpen, setShareOpen] = useState(false)
+  const [joinNotice, setJoinNotice] = useState(false) // opened a ?join= link while signed out
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Set right after we adopt a pulled hunt, so the save effect doesn't immediately
   // echo it back up as a redundant push.
   const skipNextPush = useRef(false)
+  const knownIdsRef = useRef<string[]>([]) // listing ids last synced for the active hunt
+  const pendingJoinRef = useRef<string | null>(null) // a ?join= token to redeem after sign-in
+  const activeOwnerRef = useRef<string | null>(null)
+  activeOwnerRef.current = activeOwner
+
+  const myId = user?.id ?? null
+  // Viewing my own hunt (vs a joined one) — governs localStorage writes + push path.
+  const viewingOwn = !myId || activeOwner === null || activeOwner === myId
+  const activeSummary = hunts.find((h) => h.ownerId === activeOwner)
+  const activeShared = activeSummary ? activeSummary.shared : !viewingOwn
 
   // Load after mount (avoids SSR/hydration mismatch — Furnisher pattern).
   useEffect(() => {
@@ -86,6 +121,16 @@ export default function Home() {
       const payload = unpackHandoff(m[1])
       if (payload) setIncomingPlan({ name: payload.name, plan: payload.plan, listingId: payload.listingId })
     }
+    // A partner's share link lands as ?join=<token>. Capture + strip it; the
+    // init effect redeems it once signed in (prompts sign-in otherwise).
+    const token = new URLSearchParams(window.location.search).get('join')
+    if (token) {
+      pendingJoinRef.current = token
+      setJoinNotice(true)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('join')
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    }
   }, [])
 
   const attachPlan = (listingId: string, plan: Record<string, unknown>) => {
@@ -93,69 +138,191 @@ export default function Home() {
     if (target) upsertListing({ ...target, planJson: plan })
     setIncomingPlan(null)
   }
-  // Persist every change to localStorage (always) and, when signed in, debounce
-  // a push to the cloud. localStorage remains the source of truth on-device.
+  // Persist every change. localStorage only holds MY personal hunt, so it's
+  // written only while viewing my own hunt (a joined hunt is cloud-only). When
+  // signed in, debounce a push to the active hunt — merged for shared hunts so a
+  // partner's concurrent edits aren't clobbered.
   useEffect(() => {
     if (!loaded) return
-    saveHunt(hunt)
+    if (viewingOwn) saveHunt(hunt)
     if (!supabaseEnabled || !user) return
     if (skipNextPush.current) {
       skipNextPush.current = false
       return
     }
+    const owner = activeOwnerRef.current ?? user.id
     setSyncStatus('syncing')
     if (pushTimer.current) clearTimeout(pushTimer.current)
     pushTimer.current = setTimeout(() => {
-      pushHunt(hunt)
-        .then(() => setSyncStatus('saved'))
-        .catch((e) => { console.error('[moveday] cloud push failed', e); setSyncStatus('error') })
+      const ok = (saved: Hunt) => {
+        knownIdsRef.current = saved.listings.map((l) => l.id)
+        saveKnownIds(owner, knownIdsRef.current)
+        setSyncStatus('saved')
+      }
+      const fail = (e: unknown) => { console.error('[moveday] cloud push failed', e); setSyncStatus('error') }
+      if (viewingOwn && !activeShared) {
+        pushOwnHunt(hunt).then(() => ok(hunt)).catch(fail)
+      } else {
+        pushHuntMerged(owner, hunt, knownIdsRef.current)
+          .then(({ data }) => {
+            // Adopt the merged result if the partner's copy differed (e.g. they
+            // added a listing), so this device reflects it.
+            const a = data.listings.map((l) => l.id).sort().join(',')
+            const b = hunt.listings.map((l) => l.id).sort().join(',')
+            if (a !== b) { skipNextPush.current = true; update(() => data) }
+            ok(data)
+          })
+          .catch(fail)
+      }
     }, 800)
-  }, [hunt, loaded, user])
+  }, [hunt, loaded, user, viewingOwn, activeShared])
 
-  // On sign-in, reconcile this device's hunt with the account's. Auto-resolves
-  // when only one side has content; prompts only when both do (never silently
-  // discards data). Runs once per sign-in.
+  // On sign-in: redeem any pending share link, list accessible hunts, pick the
+  // active one (freshly-joined > last-viewed > my own), and adopt it. For my own
+  // hunt this keeps the M6 non-destructive local↔cloud reconcile. Runs per sign-in.
   useEffect(() => {
     if (!supabaseEnabled || !user || !loaded) return
     let cancelled = false
     ;(async () => {
       try {
-        const cloud = await pullHunt()
+        let joinedOwner: string | null = null
+        if (pendingJoinRef.current) {
+          joinedOwner = await joinByToken(pendingJoinRef.current)
+          pendingJoinRef.current = null
+          setJoinNotice(false)
+        }
+        let list: HuntSummary[]
+        try {
+          list = await listHunts()
+        } catch (e) {
+          // e.g. the sharing migration (02) isn't applied yet (share_token column
+          // missing). Degrade to own-hunt-only sync so basic cloud save still works.
+          console.warn('[moveday] listHunts failed — sharing disabled until migration 02 is applied', e)
+          list = []
+        }
         if (cancelled) return
-        if (!cloud) {
-          await pushHunt(hunt) // first sync from this account → adopt local
-          setSyncStatus('saved')
-          return
-        }
-        const localEmpty = huntIsEmpty(hunt)
-        const cloudEmpty = huntIsEmpty(cloud.data)
-        if (!localEmpty && !cloudEmpty) {
-          const useCloud = window.confirm(
-            `This device has ${hunt.listings.length} listing(s); your account has ${cloud.data.listings.length}. ` +
-            `\n\nOK = load your account's hunt (replaces what's on this device).` +
-            `\nCancel = keep this device and overwrite your account.`,
-          )
-          if (useCloud) { skipNextPush.current = true; update(() => cloud.data) }
-          else { await pushHunt(hunt); setSyncStatus('saved') }
-        } else if (!cloudEmpty) {
+        setHunts(list)
+        const persisted = localStorage.getItem(ACTIVE_KEY)
+        const target =
+          (joinedOwner && list.some((h) => h.ownerId === joinedOwner) ? joinedOwner : null) ??
+          (persisted && list.some((h) => h.ownerId === persisted) ? persisted : null) ??
+          user.id
+
+        if (target === user.id) {
+          const cloud = await pullHunt(user.id)
+          if (cancelled) return
+          if (!cloud) {
+            await pushOwnHunt(hunt) // first sync from this account → adopt local
+          } else {
+            const localEmpty = huntIsEmpty(hunt)
+            const cloudEmpty = huntIsEmpty(cloud.data)
+            if (!localEmpty && !cloudEmpty) {
+              const useCloud = window.confirm(
+                `This device has ${hunt.listings.length} listing(s); your account has ${cloud.data.listings.length}. ` +
+                `\n\nOK = load your account's hunt (replaces what's on this device).` +
+                `\nCancel = keep this device and overwrite your account.`,
+              )
+              if (useCloud) { skipNextPush.current = true; update(() => cloud.data); rememberSynced(user.id, cloud.data) }
+              else await pushOwnHunt(hunt)
+            } else if (!cloudEmpty) {
+              skipNextPush.current = true; update(() => cloud.data); rememberSynced(user.id, cloud.data)
+            } else if (!localEmpty) {
+              await pushOwnHunt(hunt)
+            }
+          }
+          setActiveOwner(user.id)
+          localStorage.setItem(ACTIVE_KEY, user.id)
+        } else {
+          const cloud = await pullHunt(target)
+          if (cancelled) return
+          const next = cloud?.data ?? defaultHunt()
           skipNextPush.current = true
-          update(() => cloud.data) // only the cloud has content → adopt it
-        } else if (!localEmpty) {
-          await pushHunt(hunt) // only this device has content → save it up
-          setSyncStatus('saved')
+          update(() => next)
+          rememberSynced(target, next)
+          setActiveOwner(target)
+          localStorage.setItem(ACTIVE_KEY, target)
         }
+        await refreshShareMeta()
+        if (!cancelled) setSyncStatus('saved')
       } catch (e) {
-        console.error('[moveday] cloud pull failed', e)
-        setSyncStatus('error')
+        console.error('[moveday] sync init failed', e)
+        if (!cancelled) setSyncStatus('error')
       }
     })()
     return () => { cancelled = true }
-    // Intentionally only re-run when the signed-in user changes (merge is a
-    // sign-in-moment action) — hunt is read at call time, not tracked.
+    // Only re-run when the signed-in user changes (init is a sign-in action) —
+    // hunt is read at call time, not tracked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loaded])
 
   const update = (fn: (h: Hunt) => Hunt) => setHunt((h) => normalizeHunt(fn(h)))
+
+  // ── Cloud sync / sharing helpers ──────────────────────────────────────────
+  const rememberSynced = (owner: string, h: Hunt) => {
+    knownIdsRef.current = h.listings.map((l) => l.id)
+    saveKnownIds(owner, knownIdsRef.current)
+  }
+  const refreshShareMeta = async () => {
+    try {
+      const [token, count] = await Promise.all([getMyShareToken(), getMemberCount()])
+      setShareToken(token)
+      setMemberCount(count)
+    } catch {
+      /* non-fatal — the share dialog can still open */
+    }
+  }
+  // Switch which hunt is active: flush any pending push, pull the target, adopt it.
+  const switchTo = (ownerId: string) => {
+    if (!user || ownerId === activeOwner) return
+    if (pushTimer.current) clearTimeout(pushTimer.current)
+    void (async () => {
+      try {
+        const cloud = await pullHunt(ownerId)
+        const next = cloud?.data ?? (ownerId === user.id ? loadHunt() : defaultHunt())
+        skipNextPush.current = true
+        update(() => next)
+        rememberSynced(ownerId, next)
+        setActiveOwner(ownerId)
+        localStorage.setItem(ACTIVE_KEY, ownerId)
+        setSyncStatus('saved')
+      } catch (e) {
+        console.error('[moveday] switch failed', e)
+        setSyncStatus('error')
+      }
+    })()
+  }
+  const enableShare = async () => {
+    try {
+      await pushOwnHunt(hunt) // ensure my hunt row exists before tokenizing it
+      const token = await enableSharing()
+      setShareToken(token)
+      setHunts(await listHunts())
+    } catch (e) {
+      console.error('[moveday] enable sharing failed', e)
+    }
+  }
+  const disableShare = async () => {
+    try {
+      await disableSharing()
+      setShareToken(null)
+      setMemberCount(0)
+      setHunts(await listHunts())
+    } catch (e) {
+      console.error('[moveday] disable sharing failed', e)
+    }
+  }
+  const leaveActive = async () => {
+    if (!user || viewingOwn || !activeOwner) return
+    try {
+      await leaveHunt(activeOwner)
+      localStorage.removeItem(ACTIVE_KEY)
+      setHunts(await listHunts())
+      switchTo(user.id)
+      setShareOpen(false)
+    } catch (e) {
+      console.error('[moveday] leave hunt failed', e)
+    }
+  }
 
   const upsertListing = (l: Listing) =>
     update((h) => ({
@@ -254,9 +421,21 @@ export default function Home() {
     <main className="shell">
       <div className="masthead">
         <h1><span className="box">📦</span> MoveDay</h1>
-        <span className="hunt-name">{hunt.name}</span>
+        {user && hunts.length > 1 ? (
+          <select className="hunt-switch" value={activeOwner ?? ''} onChange={(e) => switchTo(e.target.value)}>
+            {hunts.map((h) => (
+              <option key={h.ownerId} value={h.ownerId}>{h.name}{h.isOwner ? ' (mine)' : ' (shared)'}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="hunt-name">{hunt.name}{!viewingOwn ? ' · shared' : ''}</span>
+        )}
       </div>
       <p className="tagline">Compare listings, remember your tours — and check your furniture actually fits.</p>
+
+      {joinNotice && !user && (
+        <p className="join-notice">You've been invited to a shared hunt — sign in below to join it.</p>
+      )}
 
       <div className="toolbar">
         <button className="primary" onClick={() => setEditing('new')}>+ Add listing</button>
@@ -268,6 +447,11 @@ export default function Home() {
         </button>
         {hunt.listings.length > 0 && (
           <button onClick={() => setRecapOpen(true)} title="Your hunt, wrapped">📊 Recap</button>
+        )}
+        {user && (
+          <button onClick={() => setShareOpen(true)} title="Share this hunt with a partner">
+            👥 Share{viewingOwn && memberCount > 0 ? ` (${memberCount})` : ''}
+          </button>
         )}
         <div className="spacer" />
         {hunt.listings.length > 0 && (
@@ -407,6 +591,18 @@ export default function Home() {
       )}
 
       {recapOpen && <RecapDialog hunt={hunt} onClose={() => setRecapOpen(false)} />}
+
+      {shareOpen && (
+        <ShareDialog
+          viewingOwn={viewingOwn}
+          shareToken={shareToken}
+          memberCount={memberCount}
+          onEnable={enableShare}
+          onDisable={disableShare}
+          onLeave={leaveActive}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
 
       {incomingPlan && (
         <IncomingPlanDialog
@@ -612,6 +808,70 @@ function RecapDialog({ hunt, onClose }: { hunt: Hunt; onClose: () => void }) {
           <div className="spacer" />
           <button className="primary" onClick={onClose}>Done</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Partner sharing dialog ─────────────────────────────────────────
+function ShareDialog({
+  viewingOwn, shareToken, memberCount, onEnable, onDisable, onLeave, onClose,
+}: {
+  viewingOwn: boolean
+  shareToken: string | null
+  memberCount: number
+  onEnable: () => Promise<void>
+  onDisable: () => Promise<void>
+  onLeave: () => Promise<void>
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const link = shareToken && typeof window !== 'undefined' ? `${window.location.origin}/?join=${shareToken}` : ''
+  const run = (fn: () => Promise<void>) => async () => { setBusy(true); try { await fn() } finally { setBusy(false) } }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog share" onClick={(e) => e.stopPropagation()}>
+        <h2>👥 Share hunt</h2>
+        {!viewingOwn ? (
+          <>
+            <p className="share-note">You're collaborating on a hunt someone shared with you. Anything you add or edit syncs for both of you.</p>
+            <div className="dialog-actions">
+              <button className="danger" disabled={busy} onClick={run(onLeave)}>Leave this hunt</button>
+              <div className="spacer" />
+              <button className="primary" onClick={onClose}>Done</button>
+            </div>
+          </>
+        ) : shareToken ? (
+          <>
+            <p className="share-note">
+              Anyone with this link can join and edit this hunt with you.
+              {memberCount > 0 ? ` ${memberCount} ${memberCount === 1 ? 'partner has' : 'partners have'} joined.` : ' No one has joined yet.'}
+            </p>
+            <div className="share-link-row">
+              <input readOnly value={link} onFocus={(e) => e.target.select()} />
+              <button onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+            <div className="dialog-actions">
+              <button className="danger" disabled={busy} onClick={run(onDisable)} title="Turn off the link and remove everyone who joined">Stop sharing</button>
+              <div className="spacer" />
+              <button className="primary" onClick={onClose}>Done</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="share-note">Share this hunt with a partner so you can both add listings, rate tours, and compare places together — on your own devices.</p>
+            <div className="dialog-actions">
+              <div className="spacer" />
+              <button onClick={onClose}>Cancel</button>
+              <button className="primary" disabled={busy} onClick={run(onEnable)}>{busy ? 'Creating…' : 'Create share link'}</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
